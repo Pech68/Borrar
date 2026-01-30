@@ -1,55 +1,456 @@
-// Este archivo se ejecuta en los servidores de Netlify, no en el navegador del usuario.
-// Aquí es seguro usar process.env.GEMINI_API_KEY
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Divisor Contable Enterprise AI (Netlify Edition)</title>
+    
+    <!-- Framework CSS: Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Core: React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Transpilador: Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-export const handler = async (event, context) => {
-  // Solo permitimos peticiones POST
-  if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
-  }
+    <!-- Motor PDF -->
+    <script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    
+    <!-- Utilidades Archivos -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <!-- Motor OCR -->
+    <script src='https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'></script>
 
-  try {
-    // 1. Obtener la clave secreta de las variables de entorno de Netlify
-    const apiKey = process.env.GEMINI_API_KEY;
+    <!-- Fuentes -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Animaciones Personalizadas */
+        .fade-in { animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        .slide-up { animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Estilos de UI Avanzados */
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(226, 232, 240, 0.8); }
+        .terminal-bg { background-color: #0f172a; background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 20px 20px; }
+        
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
 
-    if (!apiKey) {
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "La API Key no está configurada en Netlify." }),
-      };
-    }
+    <div id="root"></div>
 
-    // 2. Parsear el cuerpo de la solicitud que viene desde el index.html
-    const requestBody = JSON.parse(event.body);
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // CONFIGURACIÓN ESTRICTA DEL WORKER
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
-    // 3. Llamar a Google Gemini desde el servidor
-    // Usamos el modelo flash-preview o el que prefieras
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      }
-    );
+        // --- ICONOS ---
+        const Icons = {
+            Brain: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>,
+            Scan: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>,
+            Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>,
+            Alert: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>,
+            FilePdf: () => <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>,
+            Magic: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>,
+            Layers: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>,
+            CloudLock: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        };
 
-    const data = await response.json();
+        // --- COMPONENTE PRINCIPAL ---
+        function App() {
+            // Estado Principal
+            const [file, setFile] = useState(null);
+            const [splitFiles, setSplitFiles] = useState([]);
+            const [usingNetlifyProxy, setUsingNetlifyProxy] = useState(false);
+            
+            // Estado de Procesamiento
+            const [processing, setProcessing] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [logs, setLogs] = useState([]);
 
-    // 4. Devolver la respuesta de Google a tu página web
-    return {
-      statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    };
+            // Configuración
+            const [config, setConfig] = useState({
+                aiEnabled: true, // Por defecto activada para intentar usar Netlify
+                apiKey: "",      // Puede estar vacío si usamos Netlify
+                ocrEnabled: true,
+                ocrSensitivity: "high", 
+                keywords: "COMPROBANTE, NOTA CONTABLE, FACTURA DE VENTA",
+                numberPrefix: "NO., N°, NUMERO, #, Nro"
+            });
 
-  } catch (error) {
-    console.error("Error en la función serverless:", error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Error interno del servidor al contactar con IA." }),
-    };
-  }
-};
+            const addLog = (msg, type = "info") => {
+                const timestamp = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
+                setLogs(prev => [{ id: Date.now() + Math.random(), time: timestamp, msg, type }, ...prev].slice(0, 100)); 
+            };
+
+            // Detectar si estamos en un entorno que podría tener el proxy (dominio no localhost o config manual)
+            useEffect(() => {
+                // Mensaje inicial
+                addLog("Sistema listo. Esperando archivo.", "info");
+                
+                // Chequeo simple para ver si estamos en Netlify (opcional, solo visual)
+                if (window.location.hostname.includes("netlify.app")) {
+                    setUsingNetlifyProxy(true);
+                    addLog("Entorno Netlify detectado. Cloud AI activado.", "success");
+                }
+            }, []);
+
+            // --- LÓGICA 1: PRE-PROCESAMIENTO DE IMAGEN (CANVAS) ---
+            const preprocessImageForOCR = (imageBitmap, width, height) => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(imageBitmap, 0, 0);
+                const imgData = ctx.getImageData(0, 0, width, height);
+                const data = imgData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    const color = avg > 180 ? 255 : 0; 
+                    data[i] = color; data[i + 1] = color; data[i + 2] = color;
+                }
+                ctx.putImageData(imgData, 0, 0);
+                return canvas;
+            };
+
+            // --- LÓGICA 2: LLAMADA A GEMINI (HÍBRIDA: DIRECTA O PROXY) ---
+            const askGemini = async (text, base64Image = null) => {
+                try {
+                    const promptText = `
+                        Analiza este documento contable. Tu objetivo es identificar si esta página es el INICIO de un nuevo documento (Comprobante, Nota, Factura) y extraer su número.
+                        Reglas:
+                        1. Ignora sellos de recibido o pies de página. Céntrate en el encabezado (top 30%).
+                        2. Busca palabras clave: "COMPROBANTE CONTABLE", "NOTA DE CONTABILIDAD", "FACTURA", "RECIBO".
+                        3. Busca el número consecutivo asociado (ej: "No. 850").
+                        Responde SOLO en JSON: { "isStart": boolean, "number": "string (solo digitos) o null", "confidence": number (0-100) }
+                    `;
+
+                    const bodyContent = {
+                        contents: [{
+                            parts: base64Image 
+                                ? [{ text: promptText }, { inlineData: { mimeType: "image/jpeg", data: base64Image } }]
+                                : [{ text: promptText + `\n\nTEXTO:\n${text}` }]
+                        }]
+                    };
+
+                    let response;
+
+                    // MODO 1: Usuario puso su clave manual -> Llamada Directa
+                    if (config.apiKey && config.apiKey.startsWith('AIza')) {
+                        response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${config.apiKey}`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(bodyContent)
+                        });
+                    } 
+                    // MODO 2: Sin clave manual -> Intentar usar Proxy Netlify
+                    else {
+                        // Llamamos a la función local relativa
+                        response = await fetch(`/.netlify/functions/gemini`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(bodyContent)
+                        });
+                    }
+
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        console.error("Error API:", errText);
+                        return null;
+                    }
+
+                    const data = await response.json();
+                    let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!rawText) return null;
+                    
+                    rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    return JSON.parse(rawText);
+
+                } catch (e) {
+                    console.error("Error IA:", e);
+                    return null;
+                }
+            };
+
+            // --- LÓGICA 3: ANÁLISIS ---
+            const analyzePage = async (page, pageNum, totalPages) => {
+                let strategy = "native";
+                let text = "";
+                let detectedNumber = null;
+                let score = 0;
+
+                // 1. Texto Nativo
+                const textContent = await page.getTextContent();
+                const nativeText = textContent.items.map(item => item.str).join(' ');
+                const cleanNative = nativeText.replace(/\s+/g, ' ').trim();
+                const isGarbage = cleanNative.length < 50 || (cleanNative.match(/[^a-zA-Z0-9\sÁÉÍÓÚáéíóúñÑ.,-]/g) || []).length > 20;
+
+                if (!isGarbage && cleanNative.length > 20) {
+                    text = cleanNative;
+                    strategy = "Nativo";
+                } else if (config.ocrEnabled) {
+                    strategy = "OCR Local";
+                    const viewport = page.getViewport({ scale: 2.0 });
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height * 0.35;
+                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                    const processedCanvas = preprocessImageForOCR(canvas, canvas.width, canvas.height);
+                    const { data } = await Tesseract.recognize(processedCanvas, 'spa', { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-: ', });
+                    text = data.text;
+                }
+
+                // 2. Heurística Básica
+                const upperText = text.toUpperCase();
+                const keywords = config.keywords.split(',').map(k => k.trim().toUpperCase());
+                const prefixes = config.numberPrefix.split(',').map(p => p.trim().toUpperCase());
+
+                if (keywords.some(k => upperText.includes(k))) score += 50;
+                if (prefixes.some(p => upperText.includes(p))) score += 30;
+
+                const regex = new RegExp(`(?:${prefixes.join('|')})[:.\\s]*([0-9]{3,})`, 'i');
+                const matchConPrefijo = upperText.match(regex);
+                const matchAislado = upperText.match(/(\d{3,})/);
+
+                if (matchConPrefijo) {
+                    detectedNumber = matchConPrefijo[1];
+                    score += 20; 
+                } else if (score >= 50 && matchAislado) {
+                    detectedNumber = matchAislado[1];
+                    score += 10;
+                }
+
+                // 3. IA (Desempate o Confirmación)
+                // Si la IA está habilitada (sea por key manual o por proxy implícito)
+                if (config.aiEnabled && score > 20 && score < 90) { 
+                    strategy = config.apiKey ? "IA Gemini (Direct)" : "IA Gemini (Cloud)";
+                    const aiResult = await askGemini(text); 
+                    if (aiResult) {
+                        if (aiResult.isStart && aiResult.number) {
+                            detectedNumber = aiResult.number;
+                            score = 95;
+                        } else {
+                            score = 10;
+                        }
+                    }
+                }
+
+                return {
+                    pageNum, strategy,
+                    textSnippet: text.substring(0, 100) + "...",
+                    isStart: score >= 60,
+                    number: detectedNumber,
+                    confidence: score
+                };
+            };
+
+            const startProcessing = async () => {
+                if (!file) return;
+                setProcessing(true);
+                setSplitFiles([]);
+                setLogs([]);
+                addLog("Iniciando motor de análisis...", "info");
+
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const bufferCopy = arrayBuffer.slice(0);
+                    const loadingTask = pdfjsLib.getDocument(arrayBuffer);
+                    const pdfTextDoc = await loadingTask.promise;
+                    const numPages = pdfTextDoc.numPages;
+                    const { PDFDocument } = PDFLib;
+                    const pdfDoc = await PDFDocument.load(bufferCopy);
+
+                    addLog(`Documento cargado: ${numPages} páginas.`, "success");
+
+                    let groups = [];
+                    let currentGroup = null;
+
+                    for (let i = 1; i <= numPages; i++) {
+                        const percent = Math.round(((i - 1) / numPages) * 100);
+                        setProgress(percent);
+                        const analysis = await analyzePage(await pdfTextDoc.getPage(i), i, numPages);
+                        
+                        if (analysis.isStart && analysis.number) {
+                            const noteId = analysis.number;
+                            if (currentGroup && currentGroup.id === noteId) {
+                                currentGroup.pages.push(i - 1);
+                            } else {
+                                addLog(`Pág ${i} [${analysis.strategy}]: INICIO Nota #${noteId}`, "success");
+                                if (currentGroup) groups.push(currentGroup);
+                                currentGroup = { id: noteId, pages: [i - 1], status: "ok" };
+                            }
+                        } else {
+                            if (currentGroup) {
+                                currentGroup.pages.push(i - 1);
+                            } else {
+                                addLog(`Pág ${i}: Sin cabecera. A 'Indeterminado'`, "warning");
+                                currentGroup = { id: "Indeterminado", pages: [i - 1], status: "warning" };
+                            }
+                        }
+                    }
+                    if (currentGroup) groups.push(currentGroup);
+
+                    setProgress(100);
+                    addLog(`Generando ${groups.length} archivos PDF...`, "info");
+
+                    const finalFiles = [];
+                    for (const group of groups) {
+                        const newPdf = await PDFDocument.create();
+                        const copiedPages = await newPdf.copyPages(pdfDoc, group.pages);
+                        copiedPages.forEach(p => newPdf.addPage(p));
+                        const pdfBytes = await newPdf.save();
+                        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                        finalFiles.push({ name: `${group.id}.pdf`, originalId: group.id, blob: blob, pageCount: group.pages.length, status: group.status });
+                    }
+
+                    setSplitFiles(finalFiles);
+                    addLog("¡Todo listo para descargar!", "success");
+
+                } catch (error) {
+                    console.error(error);
+                    addLog(`ERROR: ${error.message}`, "error");
+                } finally {
+                    setProcessing(false);
+                }
+            };
+
+            const downloadAll = async () => {
+                const zip = new JSZip();
+                splitFiles.forEach(f => zip.file(f.name, f.blob));
+                const blob = await zip.generateAsync({type:"blob"});
+                saveAs(blob, "Contabilidad_Separada_Pro.zip");
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto flex flex-col gap-6">
+                    <header className="flex flex-col md:flex-row justify-between items-center gap-4 fade-in">
+                        <div>
+                            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+                                <span className="p-2 bg-blue-600 rounded-lg text-white"><Icons.Layers /></span>
+                                Divisor Contable <span className="text-blue-600">Enterprise</span>
+                            </h1>
+                            <p className="text-slate-500 mt-1 font-medium">Versión Netlify Secure Cloud</p>
+                        </div>
+                        <div className="flex items-center gap-3 bg-white p-2 rounded-xl border shadow-sm">
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${config.ocrEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                <Icons.Scan /> OCR {config.ocrEnabled ? 'ON' : 'OFF'}
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${config.aiEnabled ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+                                <Icons.Brain /> IA {config.aiEnabled ? 'ON' : 'OFF'}
+                            </div>
+                        </div>
+                    </header>
+
+                    <div className="grid lg:grid-cols-12 gap-6 flex-1">
+                        <div className="lg:col-span-4 space-y-6 slide-up">
+                            
+                            <div className="glass-panel p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Origen de Datos</h2>
+                                <div className={`relative border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all cursor-pointer group ${file ? 'border-green-500 bg-green-50' : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'}`}>
+                                    <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                                    <div className={`p-4 rounded-full mb-3 transition-transform group-hover:scale-110 ${file ? 'bg-green-100 text-green-600' : 'bg-blue-50 text-blue-500'}`}>
+                                        <Icons.FilePdf />
+                                    </div>
+                                    {file ? (
+                                        <div><p className="font-bold text-slate-800">{file.name}</p></div>
+                                    ) : (
+                                        <div><p className="font-medium text-slate-600">Arrastra tu PDF Contable</p></div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="glass-panel p-6 rounded-2xl shadow-sm">
+                                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Configuración del Motor</h2>
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                        <div className="flex flex-col">
+                                            <span className="text-sm font-bold text-slate-700">Modo IA (Gemini)</span>
+                                            <span className="text-[10px] text-slate-500">{config.apiKey ? 'Usando Key Personal' : 'Usando Netlify Cloud Secure'}</span>
+                                        </div>
+                                        <button onClick={() => setConfig({...config, aiEnabled: !config.aiEnabled})} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${config.aiEnabled ? 'bg-purple-600' : 'bg-gray-200'}`}>
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${config.aiEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+
+                                    {/* Input de API Key Opcional */}
+                                    <div className="fade-in">
+                                        <label className="text-xs font-semibold text-slate-500 block mb-1">API Key Personal (Opcional)</label>
+                                        <input 
+                                            type="password" 
+                                            value={config.apiKey}
+                                            onChange={(e) => setConfig({...config, apiKey: e.target.value})}
+                                            placeholder={usingNetlifyProxy ? "Oculto (Gestionado por Netlify)" : "Pegar sk-..."}
+                                            className="w-full text-xs p-2 rounded border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                        <p className="text-[10px] text-slate-400 mt-1">Si dejas esto vacío, usaremos la configuración segura del servidor.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button onClick={startProcessing} disabled={!file || processing} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 flex justify-center items-center gap-2 ${!file || processing ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-500/30'}`}>
+                                {processing ? <span>Procesando {progress}%</span> : <> <Icons.Magic /> <span>Ejecutar Separación</span> </>}
+                            </button>
+                        </div>
+
+                        <div className="lg:col-span-8 flex flex-col gap-6 slide-up">
+                            <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-xl border border-slate-700 flex flex-col h-64 md:h-80">
+                                <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
+                                    <div className="flex gap-2"><div className="w-3 h-3 rounded-full bg-red-500"></div><div className="w-3 h-3 rounded-full bg-yellow-500"></div><div className="w-3 h-3 rounded-full bg-green-500"></div></div>
+                                    <span className="text-xs font-mono text-slate-400 uppercase">System Logs</span>
+                                </div>
+                                <div className="p-4 font-mono text-xs flex-1 overflow-y-auto space-y-2 terminal-bg">
+                                    {logs.map((log) => (
+                                        <div key={log.id} className={`flex gap-3 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-green-400' : log.type === 'warning' ? 'text-yellow-400' : 'text-blue-300'}`}>
+                                            <span className="opacity-40">[{log.time}]</span><span>{log.msg}</span>
+                                        </div>
+                                    ))}
+                                    {processing && <div className="text-blue-500 animate-pulse">_</div>}
+                                </div>
+                                {processing && (<div className="h-1 w-full bg-slate-800"><div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${progress}%`}}></div></div>)}
+                            </div>
+
+                            {splitFiles.length > 0 && (
+                                <div className="glass-panel rounded-2xl p-6 fade-in flex-1 flex flex-col">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <div><h3 className="text-xl font-bold text-slate-800">Resultados</h3><p className="text-sm text-slate-500">{splitFiles.length} documentos</p></div>
+                                        <button onClick={downloadAll} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 shadow-lg shadow-green-500/20 transition-all hover:-translate-y-1 flex items-center gap-2">Descargar ZIP</button>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2 max-h-[400px]">
+                                        {splitFiles.map((file, idx) => (
+                                            <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition-all text-center">
+                                                <div className="flex justify-center mb-3"><div className={`w-12 h-12 rounded-lg flex items-center justify-center ${file.status === 'warning' ? 'bg-yellow-100 text-yellow-600' : 'bg-red-50 text-red-500'}`}><Icons.FilePdf /></div></div>
+                                                <div className="font-bold text-slate-700 text-sm truncate" title={file.name}>{file.name}</div>
+                                                <div className="text-xs text-slate-400 mt-1">{file.pageCount} pág</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
