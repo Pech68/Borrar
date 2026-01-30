@@ -331,17 +331,25 @@
                         // Lógica de Agrupación
                         if (analysis.isStart && analysis.number) {
                             const noteId = analysis.number;
-                            addLog(`Pág ${i} [${analysis.strategy}]: INICIO Nota #${noteId} (${analysis.confidence}% conf)`, "success");
                             
-                            // Cerrar grupo anterior si existe
-                            if (currentGroup) groups.push(currentGroup);
-                            
-                            // Crear nuevo grupo
-                            currentGroup = {
-                                id: noteId,
-                                pages: [i - 1], // Índice 0-based
-                                status: "ok"
-                            };
+                            // MEJORA: Verificar si el nuevo ID es igual al actual para NO romper la nota
+                            if (currentGroup && currentGroup.id === noteId) {
+                                addLog(`Pág ${i}: Continuación de Nota #${noteId} detectada.`, "info");
+                                currentGroup.pages.push(i - 1);
+                            } else {
+                                // Es una nota DIFERENTE -> Separar
+                                addLog(`Pág ${i} [${analysis.strategy}]: INICIO Nota #${noteId} (${analysis.confidence}% conf)`, "success");
+                                
+                                // Cerrar grupo anterior si existe
+                                if (currentGroup) groups.push(currentGroup);
+                                
+                                // Crear nuevo grupo
+                                currentGroup = {
+                                    id: noteId,
+                                    pages: [i - 1], // Índice 0-based
+                                    status: "ok"
+                                };
+                            }
                         } else {
                             if (currentGroup) {
                                 // addLog(`Pág ${i}: Soporte añadido a Nota #${currentGroup.id}`, "info");
