@@ -23,7 +23,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
-    <!-- Motor OCR (Opcional ahora) -->
+    <!-- Motor OCR (Opcional) -->
     <script src='https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'></script>
 
     <!-- Fuentes -->
@@ -76,7 +76,7 @@
             const [config, setConfig] = useState({
                 aiEnabled: true,
                 apiKey: "", 
-                ocrEnabled: true, // Si es FALSE, usa solo IA Vision
+                ocrEnabled: false, // DESACTIVADO POR DEFECTO PARA FORZAR IA VISION
                 keywords: "COMPROBANTE, NOTA CONTABLE, FACTURA DE VENTA",
                 numberPrefix: "NO., N°, NUMERO, #, Nro"
             });
@@ -86,12 +86,11 @@
                 setLogs(prev => [{ id: Date.now() + Math.random(), time: timestamp, msg, type }, ...prev].slice(0, 100)); 
             };
 
-            // Solicitar que el navegador no se duerma
             const requestWakeLock = async () => {
                 try {
                     if ('wakeLock' in navigator) {
                         wakeLock.current = await navigator.wakeLock.request('screen');
-                        addLog("Modo 'Segundo Plano' Activo (No cierres el navegador)", "success");
+                        addLog("Navegador en modo activo (Segundo plano permitido)", "success");
                     }
                 } catch (err) {
                     console.log("Wake Lock no soportado", err);
@@ -106,7 +105,7 @@
             };
 
             useEffect(() => {
-                addLog("Sistema Inteligente V3.1 (Soportes + Anti-Fecha)", "success");
+                addLog("Motor Inteligente Gemini Vision Listo.", "success");
                 return () => releaseWakeLock();
             }, []);
 
@@ -118,7 +117,6 @@
                 ctx.drawImage(imageBitmap, 0, 0);
                 const imgData = ctx.getImageData(0, 0, width, height);
                 const data = imgData.data;
-                // Binarización simple para OCR
                 for (let i = 0; i < data.length; i += 4) {
                     const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
                     const color = avg > 180 ? 255 : 0; 
@@ -128,66 +126,55 @@
                 return canvas;
             };
 
-            // Función para renderizar página a imagen (Para Gemini Vision)
             const renderPageToImage = async (page) => {
-                const viewport = page.getViewport({ scale: 1.5 }); // Calidad media para IA
+                const viewport = page.getViewport({ scale: 1.5 }); 
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-                // Convertir a base64 limpio (sin prefijo data:image...)
                 return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
             };
 
             const askGemini = async (text, base64Image = null) => {
                 try {
-                    // --- PROMPT DE INTELIGENCIA VISUAL SUPERIOR ---
                     const promptText = `
-                        Actúa como un Auditor Contable Experto. Analiza este documento (Imagen o Texto).
+                        ERES UN AUDITOR CONTABLE EXPERTO. ANALIZA LA SIGUIENTE IMAGEN O TEXTO.
                         
-                        TU OBJETIVO PRINCIPAL:
-                        Determinar si esta página es el PORTADA/INICIO de un documento contable oficial o si es un SOPORTE/ANEXO.
-
-                        CRITERIOS DE CLASIFICACIÓN (Lógica Mejorada):
+                        TAREA: Determinar si la página es un "INICIO DE DOCUMENTO" o un "SOPORTE".
                         
-                        1. ES "INICIO" (isStart: true) SI:
-                           - Tiene un encabezado formal institucional (Logos, NIT, Dirección).
-                           - Tiene Títulos Claros: "COMPROBANTE DE CONTABILIDAD", "NOTA CONTABLE", "FACTURA DE VENTA", "RECIBO DE CAJA".
-                           - Tiene un NÚMERO CONSECUTIVO visible (Ej: "No. 869", "Consecutivo: 502").
+                        INICIO DE DOCUMENTO (isStart: true):
+                        - Se ve como un formato institucional formal.
+                        - Tiene títulos como: "COMPROBANTE CONTABLE", "NOTA DE CONTABILIDAD", "FACTURA".
+                        - Tiene un número consecutivo CLARO (ej: "No. 869").
                         
-                        2. ES "SOPORTE" (isStart: false) SI:
-                           - Es un CORREO ELECTRÓNICO (Screenshot de Outlook, Gmail, etc.).
-                           - Es una TABLA DE EXCEL (Celdas, filas, sin encabezado de documento formal).
-                           - Es una CARTA o MEMORANDO texto plano.
-                           - Es una imagen borrosa, un ticket de pos, o un voucher bancario pequeño pegado en una hoja.
-                           - Es una lista de "Movimientos Auxiliares" sin formato de comprobante.
+                        SOPORTE (isStart: false):
+                        - Capturas de CORREO ELECTRÓNICO (Outlook/Gmail).
+                        - Tablas de EXCEL sin encabezado institucional.
+                        - Cartas, circulares, listados de cuentas, vouchers de banco pequeños.
+                        - Cualquier cosa que parezca evidencia de la transacción pero no sea el comprobante en sí.
                         
-                        REGLAS DE EXTRACCIÓN DE NÚMERO:
-                        - Busca etiquetas: "No.", "N°", "Consecutivo", "Comprobante #".
-                        - ¡IGNORA FECHAS! Si ves "2024", "2025", "2026" cerca de "Fecha:", NO SON EL NÚMERO.
-                        - El número suele ser de 3 a 6 dígitos (Ej: 869, 1045, 204).
+                        REGLAS DE ORO:
+                        1. IGNORA LOS AÑOS. Si ves "2025" o "2024" cerca de una fecha, NO es el número del documento.
+                        2. El número suele estar junto a "No.", "N°" o "Consecutivo".
                         
-                        Responde EXCLUSIVAMENTE este JSON:
+                        RESPONDE SOLO JSON:
                         { 
                           "isStart": boolean, 
-                          "number": "string (solo digitos) o null", 
-                          "confidence": number (0-100),
-                          "reason": "Breve justificacion (ej: 'Es un correo', 'Es una tabla excel', 'Es comprobante valido')"
+                          "number": "string o null", 
+                          "confidence": number,
+                          "reason": "Explica por qué (ej: 'Es un screenshot de Outlook', 'Es comprobante formal #869')"
                         }
                     `;
 
                     const parts = [{ text: promptText }];
-                    
-                    // Si hay imagen, la priorizamos (Gemini Vision)
                     if (base64Image) {
                         parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Image } });
                     } else if (text) {
-                        parts.push({ text: `\n\nCONTENIDO TEXTO:\n${text}` });
+                        parts.push({ text: `\n\nCONTENIDO:\n${text}` });
                     }
 
                     const bodyContent = { contents: [{ parts: parts }] };
-
                     let response;
                     
                     if (config.apiKey && config.apiKey.startsWith('AIza')) {
@@ -200,148 +187,66 @@
                         });
                     }
 
-                    if (!response.ok) throw new Error("Error conectando con la IA");
-                    
+                    if (!response.ok) throw new Error("IA no disponible");
                     const data = await response.json();
                     let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (!rawText) return null;
                     rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
                     const json = JSON.parse(rawText);
 
-                    // --- VALIDACIÓN ANTI-AÑO ---
+                    // Doble validación de años
                     if (json.number && ["2023", "2024", "2025", "2026"].includes(json.number)) {
-                        console.warn("IA confundió año con nota. Corrigiendo...");
                         json.number = null;
-                        json.isStart = false; 
+                        json.isStart = false;
                     }
                     return json;
-
                 } catch (e) {
                     console.error("Error IA:", e);
                     return null;
                 }
             };
 
-            const isLikelyYear = (strNum) => {
-                if (!strNum) return false;
-                const n = parseInt(strNum);
-                return (n >= 2020 && n <= 2030);
-            };
-
-            const analyzePage = async (page, pageNum, totalPages) => {
-                let strategy = "Ninguna";
+            const analyzePage = async (page, pageNum) => {
+                let strategy = "Gemini Vision";
                 let text = "";
                 let base64Img = null;
                 let detectedNumber = null;
-                let score = 0;
                 let isStart = false;
 
-                // 1. DECISIÓN: ¿Usar Texto Nativo/OCR o FORZAR IMAGEN?
-                // Si OCR está apagado, asumimos que el usuario quiere que la IA VEA la página (Vision)
-                
-                const textContent = await page.getTextContent();
-                const nativeText = textContent.items.map(item => item.str).join(' '); 
-                const cleanNative = nativeText.replace(/\s+/g, ' ').trim();
-                const hasNativeText = cleanNative.length > 50; // ¿Tiene texto seleccionable?
-
-                // LÓGICA MAESTRA
+                // Si el OCR está ACTIVADO por el usuario, intentamos sacar texto primero
                 if (config.ocrEnabled) {
-                    // MODO CLÁSICO: Intentar sacar texto primero
-                    if (hasNativeText) {
-                        text = cleanNative;
+                    const textContent = await page.getTextContent();
+                    const nativeText = textContent.items.map(item => item.str).join(' ');
+                    if (nativeText.length > 50) {
+                        text = nativeText;
                         strategy = "Texto Nativo";
                     } else {
-                        // Si no hay texto nativo y OCR está ON, usamos Tesseract
                         strategy = "OCR Local";
                         const viewport = page.getViewport({ scale: 2.0 });
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
-                        canvas.width = viewport.width; canvas.height = viewport.height * 0.4; // Solo cabecera
+                        canvas.width = viewport.width; canvas.height = viewport.height * 0.4;
                         await page.render({ canvasContext: ctx, viewport: viewport }).promise;
                         const processedCanvas = preprocessImageForOCR(canvas, canvas.width, canvas.height);
-                        const { data } = await Tesseract.recognize(processedCanvas, 'spa', { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:\n ', });
+                        const { data } = await Tesseract.recognize(processedCanvas, 'spa');
                         text = data.text;
                     }
                 } else {
-                    // MODO SOLO IA (VISION): Ignoramos Tesseract.
-                    // Si hay texto nativo muy bueno, lo usamos para apoyar, pero generamos la imagen para Gemini
-                    strategy = "Gemini Vision (Foto)";
-                    base64Img = await renderPageToImage(page); // Renderizamos TODA la página para que vea si es un Excel/Correo
+                    // MODO POR DEFECTO: Imagen a Gemini directamente
+                    base64Img = await renderPageToImage(page);
                 }
 
-                // 2. PRIMERA PASADA: Heurística simple (Solo si tenemos texto)
-                // Si estamos en modo VISION puro, saltamos directo a la IA
-                if (strategy !== "Gemini Vision (Foto)" && text) {
-                    const upperText = text.toUpperCase();
-                    const keywords = config.keywords.split(',').map(k => k.trim().toUpperCase());
-                    const prefixes = config.numberPrefix.split(',').map(p => p.trim().toUpperCase());
-
-                    if (keywords.some(k => upperText.includes(k))) score += 50;
-                    
-                    const regexStr = `(?:${prefixes.join('|').replace(/\./g, '\\.')})[\\s\\n.:]*([0-9]{3,})`;
-                    const regex = new RegExp(regexStr, 'i');
-                    const matchConPrefijo = upperText.match(regex);
-                    const matchAislado = upperText.match(/(\d{3,})/g);
-
-                    if (matchConPrefijo) {
-                        const candidato = matchConPrefijo[1];
-                        if (!isLikelyYear(candidato)) {
-                            detectedNumber = candidato;
-                            score += 40; 
-                        }
-                    } else if (score >= 50 && matchAislado) {
-                        for (let num of matchAislado) {
-                            if (!isLikelyYear(num)) {
-                                detectedNumber = num;
-                                score += 15;
-                                break; 
-                            }
-                        }
+                // Consultar IA
+                const aiResult = await askGemini(text, base64Img);
+                if (aiResult) {
+                    addLog(`Pág ${pageNum}: ${aiResult.reason || 'Analizada'}`, "info");
+                    if (aiResult.isStart && aiResult.number) {
+                        detectedNumber = aiResult.number;
+                        isStart = true;
                     }
                 }
 
-                // 3. CONSULTA A LA IA (El Cerebro)
-                // Llamamos a la IA si:
-                // a) Estamos en modo VISION (ocr apagado)
-                // b) Estamos en modo normal pero hay duda (score intermedio)
-                // c) Configuración dice que siempre use AI (aiEnabled es true por defecto)
-                
-                if (config.aiEnabled) {
-                    // Si no tenemos imagen aun y la necesitamos (porque el texto falló o modo vision)
-                    if (strategy === "Gemini Vision (Foto)" && !base64Img) {
-                        base64Img = await renderPageToImage(page);
-                    }
-                    // Si el score es bajo en modo texto, generamos imagen para desempatar
-                    if (score < 90 && !base64Img && strategy !== "Gemini Vision (Foto)") {
-                        // Renderizar solo cabecera para ahorrar tokens/tiempo si es desempate
-                        // Pero usuario quiere "inteligencia de soportes", mejor ver página completa si es confuso
-                        if (score < 40) base64Img = await renderPageToImage(page); 
-                    }
-
-                    const aiResult = await askGemini(text, base64Img); // Pasamos imagen si existe
-                    
-                    if (aiResult) {
-                        addLog(`Pág ${pageNum} IA dice: ${aiResult.reason || 'Sin razón'}`, "info"); // Feedback visual
-                        if (aiResult.isStart && aiResult.number && !isLikelyYear(aiResult.number)) {
-                            detectedNumber = aiResult.number;
-                            score = 95;
-                            isStart = true;
-                            strategy = base64Img ? "Gemini Vision" : "Gemini Texto";
-                        } else {
-                            // IA confirmó que es Soporte
-                            isStart = false;
-                            score = 10;
-                        }
-                    }
-                }
-
-                return {
-                    pageNum, strategy,
-                    textSnippet: text ? text.substring(0, 50) + "..." : "Imagen Analizada",
-                    isStart: score >= 60,
-                    number: detectedNumber,
-                    confidence: score
-                };
+                return { pageNum, strategy, isStart, number: detectedNumber };
             };
 
             const startProcessing = async () => {
@@ -349,28 +254,23 @@
                 setProcessing(true);
                 setSplitFiles([]);
                 setLogs([]);
-                await requestWakeLock(); // EVITAR QUE SE DUERMA EL NAVEGADOR
+                await requestWakeLock();
 
-                addLog("Iniciando análisis inteligente...", "info");
+                addLog("Iniciando análisis inteligente con Gemini Vision...", "info");
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
-                    
-                    // --- ARREGLO CRÍTICO: COPIAR EL BUFFER ---
-                    // Creamos copias independientes para PDF.js y PDF-Lib para evitar "Detached ArrayBuffer"
                     const bufferForReader = arrayBuffer.slice(0);
                     const bufferForWriter = arrayBuffer.slice(0);
 
-                    // 1. Lectura (Consume bufferForReader)
                     const loadingTask = pdfjsLib.getDocument(bufferForReader);
                     const pdfTextDoc = await loadingTask.promise;
                     const numPages = pdfTextDoc.numPages;
                     
-                    // 2. Escritura (Usa bufferForWriter copia limpia)
                     const { PDFDocument } = PDFLib;
                     const pdfDoc = await PDFDocument.load(bufferForWriter);
 
-                    addLog(`Documento cargado: ${numPages} páginas.`, "success");
+                    addLog(`Archivo cargado: ${numPages} páginas.`, "success");
 
                     let groups = [];
                     let currentGroup = null;
@@ -379,18 +279,15 @@
                         const percent = Math.round(((i - 1) / numPages) * 100);
                         setProgress(percent);
                         
-                        // Procesamiento
-                        const analysis = await analyzePage(await pdfTextDoc.getPage(i), i, numPages);
+                        const analysis = await analyzePage(await pdfTextDoc.getPage(i), i);
                         
                         if (analysis.isStart && analysis.number) {
                             const noteId = analysis.number;
-                            
-                            // Lógica de Continuidad
                             if (currentGroup && currentGroup.id === noteId) {
                                 currentGroup.pages.push(i - 1);
-                                addLog(`Pág ${i}: Continuación Nota #${noteId}`, "info");
+                                addLog(`Pág ${i}: Continuación de Nota #${noteId}`, "info");
                             } else {
-                                addLog(`Pág ${i} [${analysis.strategy}]: INICIO Nota #${noteId}`, "success");
+                                addLog(`Pág ${i}: NUEVA Nota #${noteId} detectada`, "success");
                                 if (currentGroup) groups.push(currentGroup);
                                 currentGroup = { id: noteId, pages: [i - 1], status: "ok" };
                             }
@@ -398,7 +295,7 @@
                             if (currentGroup) {
                                 currentGroup.pages.push(i - 1);
                             } else {
-                                addLog(`Pág ${i}: Soporte/Indeterminado`, "warning");
+                                addLog(`Pág ${i}: Sin cabecera. Clasificada como Soporte.`, "warning");
                                 currentGroup = { id: "Indeterminado", pages: [i - 1], status: "warning" };
                             }
                         }
@@ -406,7 +303,7 @@
                     if (currentGroup) groups.push(currentGroup);
 
                     setProgress(100);
-                    addLog(`Generando ${groups.length} archivos PDF...`, "info");
+                    addLog(`Separando ${groups.length} grupos de documentos...`, "info");
 
                     const finalFiles = [];
                     for (const group of groups) {
@@ -415,14 +312,13 @@
                         copiedPages.forEach(p => newPdf.addPage(p));
                         const pdfBytes = await newPdf.save();
                         const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                        finalFiles.push({ name: `${group.id}.pdf`, originalId: group.id, blob: blob, pageCount: group.pages.length, status: group.status });
+                        finalFiles.push({ name: `${group.id}.pdf`, blob, pageCount: group.pages.length, status: group.status });
                     }
 
                     setSplitFiles(finalFiles);
-                    addLog("¡Proceso completado!", "success");
+                    addLog("¡Proceso finalizado con éxito!", "success");
 
                 } catch (error) {
-                    console.error(error);
                     addLog(`ERROR: ${error.message}`, "error");
                 } finally {
                     setProcessing(false);
@@ -434,7 +330,7 @@
                 const zip = new JSZip();
                 splitFiles.forEach(f => zip.file(f.name, f.blob));
                 const blob = await zip.generateAsync({type:"blob"});
-                saveAs(blob, "Contabilidad_Separada.zip");
+                saveAs(blob, "Contabilidad_IA_Final.zip");
             };
 
             return (
@@ -445,107 +341,64 @@
                                 <span className="p-2 bg-blue-600 rounded-lg text-white"><Icons.Layers /></span>
                                 Divisor Contable <span className="text-blue-600">Enterprise</span>
                             </h1>
-                            <p className="text-slate-500 mt-1 font-medium text-sm">Vision Edition (Soportes Inteligentes)</p>
+                            <p className="text-slate-500 mt-1 font-medium text-sm">Powered by Gemini Vision</p>
                         </div>
                         <div className="flex items-center gap-3 bg-white p-2 rounded-xl border shadow-sm">
-                            {/* BOTÓN OCR: Ahora controla si usamos Tesseract o Visión Pura */}
                             <button 
                                 onClick={() => setConfig({...config, ocrEnabled: !config.ocrEnabled})}
-                                className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 transition-all ${config.ocrEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 ring-2 ring-blue-400'}`}
+                                className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 transition-all ${config.ocrEnabled ? 'bg-green-100 text-green-700' : 'bg-blue-600 text-white shadow-lg'}`}
                             >
-                                {config.ocrEnabled ? <><Icons.Scan /> Modo Rápido (OCR)</> : <><Icons.Eye /> Modo Inteligente (Gemini Vision)</>}
+                                {config.ocrEnabled ? <><Icons.Scan /> Modo OCR Activado</> : <><Icons.Eye /> Modo Vision IA (Recomendado)</>}
                             </button>
-                            
-                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${config.aiEnabled ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
-                                <Icons.Brain /> IA {config.aiEnabled ? 'ON' : 'OFF'}
+                            <div className="px-3 py-1 rounded-full text-xs font-bold bg-purple-100 text-purple-700 flex items-center gap-2">
+                                <Icons.Brain /> IA Activa
                             </div>
                         </div>
                     </header>
 
                     <div className="grid lg:grid-cols-12 gap-6 flex-1">
                         <div className="lg:col-span-4 space-y-6 slide-up">
-                            
-                            <div className="glass-panel p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
-                                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Origen de Datos</h2>
-                                <div className={`relative border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all cursor-pointer group ${file ? 'border-green-500 bg-green-50' : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'}`}>
-                                    <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                                    <div className={`p-4 rounded-full mb-3 transition-transform group-hover:scale-110 ${file ? 'bg-green-100 text-green-600' : 'bg-blue-50 text-blue-500'}`}>
-                                        <Icons.FilePdf />
-                                    </div>
-                                    {file ? (
-                                        <div><p className="font-bold text-slate-800">{file.name}</p></div>
-                                    ) : (
-                                        <div><p className="font-medium text-slate-600">Arrastra tu PDF Contable</p></div>
-                                    )}
-                                </div>
-                            </div>
-
                             <div className="glass-panel p-6 rounded-2xl shadow-sm">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Opciones</h2>
-                                    <button onClick={() => setShowSettings(!showSettings)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-                                        <Icons.Settings /> {showSettings ? 'Ocultar' : 'Avanzado'}
-                                    </button>
-                                </div>
-                                
-                                <div className="space-y-4">
-                                    {/* Explicación dinámica del modo */}
-                                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600">
-                                        {config.ocrEnabled 
-                                            ? "⚡ Modo Rápido: Intenta leer texto primero. Usa IA solo si duda. Bueno para documentos digitales limpios."
-                                            : "🧠 Modo Inteligente: Gemini 'mira' cada página. Detecta Excels, Correos y Facturas difíciles. Más lento pero más preciso."
-                                        }
-                                    </div>
-
-                                    {showSettings && (
-                                        <div className="fade-in pt-4 border-t border-slate-100">
-                                            <label className="text-xs font-semibold text-slate-500 block mb-1">Clave API Personal (Opcional)</label>
-                                            <input 
-                                                type="password" 
-                                                value={config.apiKey}
-                                                onChange={(e) => setConfig({...config, apiKey: e.target.value})}
-                                                placeholder="Solo si quieres usar tu propia key..."
-                                                className="w-full text-xs p-2 rounded border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                            />
-                                        </div>
-                                    )}
+                                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Cargar Documento</h2>
+                                <div className={`relative border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center transition-all cursor-pointer ${file ? 'border-green-500 bg-green-50' : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'}`}>
+                                    <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files[0])} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                                    <div className={`p-4 rounded-full mb-3 ${file ? 'text-green-600' : 'text-blue-500'}`}><Icons.FilePdf /></div>
+                                    <p className="font-bold text-slate-700">{file ? file.name : "Seleccionar PDF"}</p>
                                 </div>
                             </div>
 
-                            <button onClick={startProcessing} disabled={!file || processing} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 flex justify-center items-center gap-2 ${!file || processing ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-500/30'}`}>
-                                {processing ? <span>Procesando {progress}%</span> : <> <Icons.Magic /> <span>Ejecutar Separación</span> </>}
+                            <button onClick={startProcessing} disabled={!file || processing} className={`w-full py-4 rounded-xl font-bold text-white shadow-lg transition-all ${!file || processing ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'}`}>
+                                {processing ? `Procesando... ${progress}%` : "Comenzar Separación Inteligente"}
                             </button>
                         </div>
 
                         <div className="lg:col-span-8 flex flex-col gap-6 slide-up">
                             <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-xl border border-slate-700 flex flex-col h-64 md:h-80">
-                                <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
-                                    <div className="flex gap-2"><div className="w-3 h-3 rounded-full bg-red-500"></div><div className="w-3 h-3 rounded-full bg-yellow-500"></div><div className="w-3 h-3 rounded-full bg-green-500"></div></div>
-                                    <span className="text-xs font-mono text-slate-400 uppercase">Logs de Procesamiento</span>
+                                <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex justify-between items-center text-xs text-slate-400 font-mono">
+                                    <span>CONSOLA DE AUDITORÍA IA</span>
+                                    <span>{processing ? 'TRABAJANDO' : 'LISTO'}</span>
                                 </div>
                                 <div className="p-4 font-mono text-xs flex-1 overflow-y-auto space-y-2 terminal-bg">
                                     {logs.map((log) => (
-                                        <div key={log.id} className={`flex gap-3 ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-green-400' : log.type === 'warning' ? 'text-yellow-400' : 'text-blue-300'}`}>
+                                        <div key={log.id} className={`flex gap-3 ${log.type === 'success' ? 'text-green-400' : log.type === 'warning' ? 'text-yellow-400' : 'text-blue-300'}`}>
                                             <span className="opacity-40">[{log.time}]</span><span>{log.msg}</span>
                                         </div>
                                     ))}
-                                    {processing && <div className="text-blue-500 animate-pulse">_</div>}
                                 </div>
-                                {processing && (<div className="h-1 w-full bg-slate-800"><div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${progress}%`}}></div></div>)}
                             </div>
 
                             {splitFiles.length > 0 && (
                                 <div className="glass-panel rounded-2xl p-6 fade-in flex-1 flex flex-col">
                                     <div className="flex justify-between items-center mb-6">
-                                        <div><h3 className="text-xl font-bold text-slate-800">Resultados</h3><p className="text-sm text-slate-500">{splitFiles.length} documentos</p></div>
-                                        <button onClick={downloadAll} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 shadow-lg shadow-green-500/20 transition-all hover:-translate-y-1 flex items-center gap-2">Descargar ZIP</button>
+                                        <h3 className="text-xl font-bold text-slate-800">Documentos Separados</h3>
+                                        <button onClick={downloadAll} className="bg-green-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-green-700 shadow-lg">Descargar Todo (.ZIP)</button>
                                     </div>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2 max-h-[400px]">
-                                        {splitFiles.map((file, idx) => (
-                                            <div key={idx} className="bg-white border border-slate-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition-all text-center">
-                                                <div className="flex justify-center mb-3"><div className={`w-12 h-12 rounded-lg flex items-center justify-center ${file.status === 'warning' ? 'bg-yellow-100 text-yellow-600' : 'bg-red-50 text-red-500'}`}><Icons.FilePdf /></div></div>
-                                                <div className="font-bold text-slate-700 text-sm truncate" title={file.name}>{file.name}</div>
-                                                <div className="text-xs text-slate-400 mt-1">{file.pageCount} pág</div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 overflow-y-auto max-h-64">
+                                        {splitFiles.map((f, i) => (
+                                            <div key={i} className="bg-white border border-slate-200 rounded-xl p-4 text-center">
+                                                <div className={`w-10 h-10 mx-auto mb-2 flex items-center justify-center rounded ${f.status === 'warning' ? 'bg-yellow-100 text-yellow-600' : 'bg-red-50 text-red-500'}`}><Icons.FilePdf /></div>
+                                                <div className="font-bold text-slate-700 text-xs truncate">{f.name}</div>
+                                                <div className="text-[10px] text-slate-400">{f.pageCount} pág</div>
                                             </div>
                                         ))}
                                     </div>
