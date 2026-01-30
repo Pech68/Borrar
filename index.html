@@ -83,14 +83,19 @@
                 try {
                     const arrayBuffer = await file.arrayBuffer();
                     
-                    // 1. Leer texto con PDF.js
+                    // IMPORTANTE: Clonamos el buffer. 
+                    // pdfjsLib.getDocument puede "transferir" el buffer al worker, dejándolo vacío (detached) en el hilo principal.
+                    // Necesitamos una copia intacta para que pdf-lib la use después.
+                    const arrayBufferForPdfLib = arrayBuffer.slice(0);
+
+                    // 1. Leer texto con PDF.js (usa el buffer original)
                     const loadingTask = pdfjsLib.getDocument(arrayBuffer);
                     const pdfTextDoc = await loadingTask.promise;
                     const numPages = pdfTextDoc.numPages;
 
-                    // 2. Cargar documento para manipulación con pdf-lib
+                    // 2. Cargar documento para manipulación con pdf-lib (usa la copia)
                     const { PDFDocument } = PDFLib;
-                    const pdfDoc = await PDFDocument.load(arrayBuffer);
+                    const pdfDoc = await PDFDocument.load(arrayBufferForPdfLib);
 
                     addLog(`El documento tiene ${numPages} páginas. Analizando contenido...`);
 
@@ -158,7 +163,7 @@
                 } catch (error) {
                     console.error(error);
                     addLog(`Error crítico: ${error.message}`);
-                    alert("Error al procesar. Revisa que el PDF no tenga contraseña.");
+                    alert("Error al procesar. Revisa la consola o intenta de nuevo.");
                 } finally {
                     setProcessing(false);
                 }
