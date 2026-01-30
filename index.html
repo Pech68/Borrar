@@ -355,11 +355,20 @@
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
-                    const loadingTask = pdfjsLib.getDocument(arrayBuffer);
+                    
+                    // --- ARREGLO CRÍTICO: COPIAR EL BUFFER ---
+                    // Creamos copias independientes para PDF.js y PDF-Lib para evitar "Detached ArrayBuffer"
+                    const bufferForReader = arrayBuffer.slice(0);
+                    const bufferForWriter = arrayBuffer.slice(0);
+
+                    // 1. Lectura (Consume bufferForReader)
+                    const loadingTask = pdfjsLib.getDocument(bufferForReader);
                     const pdfTextDoc = await loadingTask.promise;
                     const numPages = pdfTextDoc.numPages;
+                    
+                    // 2. Escritura (Usa bufferForWriter copia limpia)
                     const { PDFDocument } = PDFLib;
-                    const pdfDoc = await PDFDocument.load(arrayBuffer);
+                    const pdfDoc = await PDFDocument.load(bufferForWriter);
 
                     addLog(`Documento cargado: ${numPages} páginas.`, "success");
 
