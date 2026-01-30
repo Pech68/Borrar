@@ -86,8 +86,8 @@
 
             // Configuración
             const [config, setConfig] = useState({
-                aiEnabled: true, // Por defecto activada para intentar usar Netlify
-                apiKey: "",      // Puede estar vacío si usamos Netlify
+                aiEnabled: true,
+                apiKey: "",
                 ocrEnabled: true,
                 ocrSensitivity: "high", 
                 keywords: "COMPROBANTE, NOTA CONTABLE, FACTURA DE VENTA",
@@ -99,19 +99,16 @@
                 setLogs(prev => [{ id: Date.now() + Math.random(), time: timestamp, msg, type }, ...prev].slice(0, 100)); 
             };
 
-            // Detectar si estamos en un entorno que podría tener el proxy (dominio no localhost o config manual)
+            // Detectar si estamos en un entorno que podría tener el proxy
             useEffect(() => {
-                // Mensaje inicial
-                addLog("Sistema listo. Esperando archivo.", "info");
-                
-                // Chequeo simple para ver si estamos en Netlify (opcional, solo visual)
+                addLog("Sistema listo v2.2 (Fix Año 2025).", "info");
                 if (window.location.hostname.includes("netlify.app")) {
                     setUsingNetlifyProxy(true);
-                    addLog("Entorno Netlify detectado. Cloud AI activado.", "success");
+                    addLog("Entorno Netlify detectado.", "success");
                 }
             }, []);
 
-            // --- LÓGICA 1: PRE-PROCESAMIENTO DE IMAGEN (CANVAS) ---
+            // --- LÓGICA 1: PRE-PROCESAMIENTO ---
             const preprocessImageForOCR = (imageBitmap, width, height) => {
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
@@ -129,15 +126,20 @@
                 return canvas;
             };
 
-            // --- LÓGICA 2: LLAMADA A GEMINI (HÍBRIDA: DIRECTA O PROXY) ---
+            // --- LÓGICA 2: LLAMADA A GEMINI ---
             const askGemini = async (text, base64Image = null) => {
                 try {
+                    // PROMPT MODIFICADO: Instrucción estricta Anti-Año
                     const promptText = `
-                        Analiza este documento contable. Tu objetivo es identificar si esta página es el INICIO de un nuevo documento (Comprobante, Nota, Factura) y extraer su número.
-                        Reglas:
-                        1. Ignora sellos de recibido o pies de página. Céntrate en el encabezado (top 30%).
-                        2. Busca palabras clave: "COMPROBANTE CONTABLE", "NOTA DE CONTABILIDAD", "FACTURA", "RECIBO".
-                        3. Busca el número consecutivo asociado (ej: "No. 850").
+                        Analiza este documento contable. Tu objetivo es identificar si esta página es el INICIO de un documento y extraer su NÚMERO CONSECUTIVO.
+                        
+                        REGLAS CRÍTICAS (NO FALLAR):
+                        1. El número del documento suele estar debajo o al lado de la etiqueta "No.", "Consecutivo" o "Número".
+                        2. ¡IGNORA LAS FECHAS! Si ves "Fecha: 2025.12.31", el número NO ES 2025. Ignora 2024, 2025, 2026.
+                        3. Busca palabras clave de inicio: "COMPROBANTE CONTABLE", "NOTA DE CONTABILIDAD", "FACTURA".
+                        
+                        Ejemplo: Si ves "No. 869" y "Fecha 2025", el número es "869".
+                        
                         Responde SOLO en JSON: { "isStart": boolean, "number": "string (solo digitos) o null", "confidence": number (0-100) }
                     `;
 
@@ -150,42 +152,43 @@
                     };
 
                     let response;
-
-                    // MODO 1: Usuario puso su clave manual -> Llamada Directa
                     if (config.apiKey && config.apiKey.startsWith('AIza')) {
                         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${config.apiKey}`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(bodyContent)
+                            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyContent)
                         });
-                    } 
-                    // MODO 2: Sin clave manual -> Intentar usar Proxy Netlify
-                    else {
-                        // Llamamos a la función local relativa
+                    } else {
                         response = await fetch(`/.netlify/functions/gemini`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(bodyContent)
+                            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyContent)
                         });
                     }
 
-                    if (!response.ok) {
-                        const errText = await response.text();
-                        console.error("Error API:", errText);
-                        return null;
-                    }
-
+                    if (!response.ok) return null;
                     const data = await response.json();
                     let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (!rawText) return null;
-                    
                     rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-                    return JSON.parse(rawText);
+                    const json = JSON.parse(rawText);
+
+                    // VALIDACIÓN EXTRA POST-IA: Si la IA devuelve un año, lo anulamos
+                    if (json.number && ["2024", "2025", "2026"].includes(json.number)) {
+                        console.log("IA intentó devolver un año, bloqueado.");
+                        json.number = null;
+                        json.isStart = false;
+                    }
+                    return json;
 
                 } catch (e) {
                     console.error("Error IA:", e);
                     return null;
                 }
+            };
+
+            // --- HELPER: Validar si es un año ---
+            const isLikelyYear = (strNum) => {
+                if (!strNum) return false;
+                // Si es 2023, 2024, 2025, 2026... es muy probable que sea fecha y no consecutivo
+                const n = parseInt(strNum);
+                return (n >= 2020 && n <= 2030);
             };
 
             // --- LÓGICA 3: ANÁLISIS ---
@@ -197,7 +200,7 @@
 
                 // 1. Texto Nativo
                 const textContent = await page.getTextContent();
-                const nativeText = textContent.items.map(item => item.str).join(' ');
+                const nativeText = textContent.items.map(item => item.str).join(' '); // Usamos ' ' para preservar separaciones
                 const cleanNative = nativeText.replace(/\s+/g, ' ').trim();
                 const isGarbage = cleanNative.length < 50 || (cleanNative.match(/[^a-zA-Z0-9\sÁÉÍÓÚáéíóúñÑ.,-]/g) || []).length > 20;
 
@@ -210,43 +213,68 @@
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     canvas.width = viewport.width;
-                    canvas.height = viewport.height * 0.35;
+                    canvas.height = viewport.height * 0.35; // Top 35%
                     await page.render({ canvasContext: ctx, viewport: viewport }).promise;
                     const processedCanvas = preprocessImageForOCR(canvas, canvas.width, canvas.height);
-                    const { data } = await Tesseract.recognize(processedCanvas, 'spa', { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-: ', });
+                    const { data } = await Tesseract.recognize(processedCanvas, 'spa', { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:\n ', });
                     text = data.text;
                 }
 
-                // 2. Heurística Básica
+                // 2. Heurística Avanzada (Anti-Año)
                 const upperText = text.toUpperCase();
                 const keywords = config.keywords.split(',').map(k => k.trim().toUpperCase());
-                const prefixes = config.numberPrefix.split(',').map(p => p.trim().toUpperCase());
+                const prefixes = config.numberPrefix.split(',').map(p => p.trim().toUpperCase()); // ["NO.", "N°", ...]
 
+                // Detectar palabra clave (Comprobante, Nota, etc)
                 if (keywords.some(k => upperText.includes(k))) score += 50;
-                if (prefixes.some(p => upperText.includes(p))) score += 30;
 
-                const regex = new RegExp(`(?:${prefixes.join('|')})[:.\\s]*([0-9]{3,})`, 'i');
+                // REGEX MEJORADA: Permite saltos de línea entre "No." y el número "869"
+                // Explicación: (Prefijo) + (espacios o saltos) + (Digitos)
+                const regexStr = `(?:${prefixes.join('|').replace(/\./g, '\\.')})[\\s\\n.:]*([0-9]{3,})`;
+                const regex = new RegExp(regexStr, 'i');
+                
                 const matchConPrefijo = upperText.match(regex);
-                const matchAislado = upperText.match(/(\d{3,})/);
+                const matchAislado = upperText.match(/(\d{3,})/g); // Buscar todos los números aislados
 
                 if (matchConPrefijo) {
-                    detectedNumber = matchConPrefijo[1];
-                    score += 20; 
+                    // Tenemos "No. 869" -> Prioridad absoluta
+                    const cand = matchConPrefijo[1];
+                    // Aún así, si dice "No. 2025" podría ser un error de lectura de fecha, pero es raro.
+                    // Asumimos que si tiene prefijo explícito, es válido.
+                    detectedNumber = cand;
+                    score += 40; 
                 } else if (score >= 50 && matchAislado) {
-                    detectedNumber = matchAislado[1];
-                    score += 10;
+                    // Vemos "COMPROBANTE" pero no vemos "No. XXX" claro.
+                    // Buscamos números aislados que NO sean años.
+                    for (let num of matchAislado) {
+                        if (!isLikelyYear(num)) {
+                            detectedNumber = num;
+                            score += 15;
+                            break; // Encontramos el primer número que no es un año (ej: 852)
+                        }
+                    }
+                }
+
+                // Validar final
+                if (detectedNumber && isLikelyYear(detectedNumber) && !matchConPrefijo) {
+                    // Si el número detectado parece un año y NO tenía prefijo "No.", lo descartamos
+                    detectedNumber = null;
+                    score -= 20;
                 }
 
                 // 3. IA (Desempate o Confirmación)
-                // Si la IA está habilitada (sea por key manual o por proxy implícito)
                 if (config.aiEnabled && score > 20 && score < 90) { 
                     strategy = config.apiKey ? "IA Gemini (Direct)" : "IA Gemini (Cloud)";
                     const aiResult = await askGemini(text); 
-                    if (aiResult) {
-                        if (aiResult.isStart && aiResult.number) {
-                            detectedNumber = aiResult.number;
-                            score = 95;
+                    if (aiResult && aiResult.number) {
+                        // Doble chequeo anti-año en resultado IA
+                        if (!isLikelyYear(aiResult.number)) {
+                            if (aiResult.isStart) {
+                                detectedNumber = aiResult.number;
+                                score = 95;
+                            }
                         } else {
+                            // La IA devolvió un año, ignoramos
                             score = 10;
                         }
                     }
@@ -254,7 +282,7 @@
 
                 return {
                     pageNum, strategy,
-                    textSnippet: text.substring(0, 100) + "...",
+                    textSnippet: text.substring(0, 100).replace(/\n/g, ' ') + "...",
                     isStart: score >= 60,
                     number: detectedNumber,
                     confidence: score
@@ -266,7 +294,7 @@
                 setProcessing(true);
                 setSplitFiles([]);
                 setLogs([]);
-                addLog("Iniciando motor de análisis...", "info");
+                addLog("Iniciando motor de análisis (Filtro Año Activado)...", "info");
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
@@ -289,14 +317,20 @@
                         
                         if (analysis.isStart && analysis.number) {
                             const noteId = analysis.number;
+                            
+                            // LÓGICA DE CONTINUIDAD MEJORADA
+                            // Si detectamos el MISMO número que ya traíamos, es simplemente la siguiente página de la misma nota
                             if (currentGroup && currentGroup.id === noteId) {
                                 currentGroup.pages.push(i - 1);
+                                addLog(`Pág ${i}: Continuación confirmada Nota #${noteId}`, "info");
                             } else {
+                                // Es una nota NUEVA
                                 addLog(`Pág ${i} [${analysis.strategy}]: INICIO Nota #${noteId}`, "success");
                                 if (currentGroup) groups.push(currentGroup);
                                 currentGroup = { id: noteId, pages: [i - 1], status: "ok" };
                             }
                         } else {
+                            // NO es inicio (es soporte o continuación sin cabecera)
                             if (currentGroup) {
                                 currentGroup.pages.push(i - 1);
                             } else {
@@ -346,7 +380,7 @@
                                 <span className="p-2 bg-blue-600 rounded-lg text-white"><Icons.Layers /></span>
                                 Divisor Contable <span className="text-blue-600">Enterprise</span>
                             </h1>
-                            <p className="text-slate-500 mt-1 font-medium">Versión Netlify Secure Cloud</p>
+                            <p className="text-slate-500 mt-1 font-medium">Versión Netlify Secure Cloud (Fix Año 2025)</p>
                         </div>
                         <div className="flex items-center gap-3 bg-white p-2 rounded-xl border shadow-sm">
                             <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${config.ocrEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
