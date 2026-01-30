@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Divisor Contable Enterprise AI (Netlify Edition)</title>
+    <title>Divisor Contable Enterprise AI (Vision Edition)</title>
     
     <!-- Framework CSS: Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -23,7 +23,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
-    <!-- Motor OCR -->
+    <!-- Motor OCR (Opcional ahora) -->
     <script src='https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'></script>
 
     <!-- Fuentes -->
@@ -32,64 +32,51 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
-        
-        /* Animaciones Personalizadas */
         .fade-in { animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
         .slide-up { animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
-        
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        
-        /* Estilos de UI Avanzados */
         .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(226, 232, 240, 0.8); }
         .terminal-bg { background-color: #0f172a; background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 20px 20px; }
-        
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
-<body class="bg-slate-100 text-slate-800 antialiased selection:bg-blue-100 selection:text-blue-900">
+<body class="bg-slate-100 text-slate-800 antialiased">
 
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         
-        // CONFIGURACIÓN ESTRICTA DEL WORKER
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
         // --- ICONOS ---
         const Icons = {
             Brain: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>,
             Scan: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>,
-            Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>,
-            Alert: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>,
             FilePdf: () => <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>,
             Magic: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>,
             Layers: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>,
-            CloudLock: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            Settings: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>,
+            Lock: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>,
+            Eye: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
         };
 
-        // --- COMPONENTE PRINCIPAL ---
         function App() {
-            // Estado Principal
             const [file, setFile] = useState(null);
             const [splitFiles, setSplitFiles] = useState([]);
-            const [usingNetlifyProxy, setUsingNetlifyProxy] = useState(false);
-            
-            // Estado de Procesamiento
+            const [showSettings, setShowSettings] = useState(false);
             const [processing, setProcessing] = useState(false);
             const [progress, setProgress] = useState(0);
             const [logs, setLogs] = useState([]);
+            const wakeLock = useRef(null);
 
-            // Configuración
             const [config, setConfig] = useState({
                 aiEnabled: true,
-                apiKey: "",
-                ocrEnabled: true,
-                ocrSensitivity: "high", 
+                apiKey: "", 
+                ocrEnabled: true, // Si es FALSE, usa solo IA Vision
                 keywords: "COMPROBANTE, NOTA CONTABLE, FACTURA DE VENTA",
                 numberPrefix: "NO., N°, NUMERO, #, Nro"
             });
@@ -99,16 +86,30 @@
                 setLogs(prev => [{ id: Date.now() + Math.random(), time: timestamp, msg, type }, ...prev].slice(0, 100)); 
             };
 
-            // Detectar si estamos en un entorno que podría tener el proxy
-            useEffect(() => {
-                addLog("Sistema listo v2.2 (Fix Año 2025).", "info");
-                if (window.location.hostname.includes("netlify.app")) {
-                    setUsingNetlifyProxy(true);
-                    addLog("Entorno Netlify detectado.", "success");
+            // Solicitar que el navegador no se duerma
+            const requestWakeLock = async () => {
+                try {
+                    if ('wakeLock' in navigator) {
+                        wakeLock.current = await navigator.wakeLock.request('screen');
+                        addLog("Modo 'Segundo Plano' Activo (No cierres el navegador)", "success");
+                    }
+                } catch (err) {
+                    console.log("Wake Lock no soportado", err);
                 }
+            };
+
+            const releaseWakeLock = async () => {
+                if (wakeLock.current) {
+                    await wakeLock.current.release();
+                    wakeLock.current = null;
+                }
+            };
+
+            useEffect(() => {
+                addLog("Sistema Inteligente V3.1 (Soportes + Anti-Fecha)", "success");
+                return () => releaseWakeLock();
             }, []);
 
-            // --- LÓGICA 1: PRE-PROCESAMIENTO ---
             const preprocessImageForOCR = (imageBitmap, width, height) => {
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
@@ -117,6 +118,7 @@
                 ctx.drawImage(imageBitmap, 0, 0);
                 const imgData = ctx.getImageData(0, 0, width, height);
                 const data = imgData.data;
+                // Binarización simple para OCR
                 for (let i = 0; i < data.length; i += 4) {
                     const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
                     const color = avg > 180 ? 255 : 0; 
@@ -126,32 +128,68 @@
                 return canvas;
             };
 
-            // --- LÓGICA 2: LLAMADA A GEMINI ---
+            // Función para renderizar página a imagen (Para Gemini Vision)
+            const renderPageToImage = async (page) => {
+                const viewport = page.getViewport({ scale: 1.5 }); // Calidad media para IA
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                // Convertir a base64 limpio (sin prefijo data:image...)
+                return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+            };
+
             const askGemini = async (text, base64Image = null) => {
                 try {
-                    // PROMPT MODIFICADO: Instrucción estricta Anti-Año
+                    // --- PROMPT DE INTELIGENCIA VISUAL SUPERIOR ---
                     const promptText = `
-                        Analiza este documento contable. Tu objetivo es identificar si esta página es el INICIO de un documento y extraer su NÚMERO CONSECUTIVO.
+                        Actúa como un Auditor Contable Experto. Analiza este documento (Imagen o Texto).
                         
-                        REGLAS CRÍTICAS (NO FALLAR):
-                        1. El número del documento suele estar debajo o al lado de la etiqueta "No.", "Consecutivo" o "Número".
-                        2. ¡IGNORA LAS FECHAS! Si ves "Fecha: 2025.12.31", el número NO ES 2025. Ignora 2024, 2025, 2026.
-                        3. Busca palabras clave de inicio: "COMPROBANTE CONTABLE", "NOTA DE CONTABILIDAD", "FACTURA".
+                        TU OBJETIVO PRINCIPAL:
+                        Determinar si esta página es el PORTADA/INICIO de un documento contable oficial o si es un SOPORTE/ANEXO.
+
+                        CRITERIOS DE CLASIFICACIÓN (Lógica Mejorada):
                         
-                        Ejemplo: Si ves "No. 869" y "Fecha 2025", el número es "869".
+                        1. ES "INICIO" (isStart: true) SI:
+                           - Tiene un encabezado formal institucional (Logos, NIT, Dirección).
+                           - Tiene Títulos Claros: "COMPROBANTE DE CONTABILIDAD", "NOTA CONTABLE", "FACTURA DE VENTA", "RECIBO DE CAJA".
+                           - Tiene un NÚMERO CONSECUTIVO visible (Ej: "No. 869", "Consecutivo: 502").
                         
-                        Responde SOLO en JSON: { "isStart": boolean, "number": "string (solo digitos) o null", "confidence": number (0-100) }
+                        2. ES "SOPORTE" (isStart: false) SI:
+                           - Es un CORREO ELECTRÓNICO (Screenshot de Outlook, Gmail, etc.).
+                           - Es una TABLA DE EXCEL (Celdas, filas, sin encabezado de documento formal).
+                           - Es una CARTA o MEMORANDO texto plano.
+                           - Es una imagen borrosa, un ticket de pos, o un voucher bancario pequeño pegado en una hoja.
+                           - Es una lista de "Movimientos Auxiliares" sin formato de comprobante.
+                        
+                        REGLAS DE EXTRACCIÓN DE NÚMERO:
+                        - Busca etiquetas: "No.", "N°", "Consecutivo", "Comprobante #".
+                        - ¡IGNORA FECHAS! Si ves "2024", "2025", "2026" cerca de "Fecha:", NO SON EL NÚMERO.
+                        - El número suele ser de 3 a 6 dígitos (Ej: 869, 1045, 204).
+                        
+                        Responde EXCLUSIVAMENTE este JSON:
+                        { 
+                          "isStart": boolean, 
+                          "number": "string (solo digitos) o null", 
+                          "confidence": number (0-100),
+                          "reason": "Breve justificacion (ej: 'Es un correo', 'Es una tabla excel', 'Es comprobante valido')"
+                        }
                     `;
 
-                    const bodyContent = {
-                        contents: [{
-                            parts: base64Image 
-                                ? [{ text: promptText }, { inlineData: { mimeType: "image/jpeg", data: base64Image } }]
-                                : [{ text: promptText + `\n\nTEXTO:\n${text}` }]
-                        }]
-                    };
+                    const parts = [{ text: promptText }];
+                    
+                    // Si hay imagen, la priorizamos (Gemini Vision)
+                    if (base64Image) {
+                        parts.push({ inlineData: { mimeType: "image/jpeg", data: base64Image } });
+                    } else if (text) {
+                        parts.push({ text: `\n\nCONTENIDO TEXTO:\n${text}` });
+                    }
+
+                    const bodyContent = { contents: [{ parts: parts }] };
 
                     let response;
+                    
                     if (config.apiKey && config.apiKey.startsWith('AIza')) {
                         response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${config.apiKey}`, {
                             method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bodyContent)
@@ -162,18 +200,19 @@
                         });
                     }
 
-                    if (!response.ok) return null;
+                    if (!response.ok) throw new Error("Error conectando con la IA");
+                    
                     const data = await response.json();
                     let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
                     if (!rawText) return null;
                     rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
                     const json = JSON.parse(rawText);
 
-                    // VALIDACIÓN EXTRA POST-IA: Si la IA devuelve un año, lo anulamos
-                    if (json.number && ["2024", "2025", "2026"].includes(json.number)) {
-                        console.log("IA intentó devolver un año, bloqueado.");
+                    // --- VALIDACIÓN ANTI-AÑO ---
+                    if (json.number && ["2023", "2024", "2025", "2026"].includes(json.number)) {
+                        console.warn("IA confundió año con nota. Corrigiendo...");
                         json.number = null;
-                        json.isStart = false;
+                        json.isStart = false; 
                     }
                     return json;
 
@@ -183,98 +222,114 @@
                 }
             };
 
-            // --- HELPER: Validar si es un año ---
             const isLikelyYear = (strNum) => {
                 if (!strNum) return false;
-                // Si es 2023, 2024, 2025, 2026... es muy probable que sea fecha y no consecutivo
                 const n = parseInt(strNum);
                 return (n >= 2020 && n <= 2030);
             };
 
-            // --- LÓGICA 3: ANÁLISIS ---
             const analyzePage = async (page, pageNum, totalPages) => {
-                let strategy = "native";
+                let strategy = "Ninguna";
                 let text = "";
+                let base64Img = null;
                 let detectedNumber = null;
                 let score = 0;
+                let isStart = false;
 
-                // 1. Texto Nativo
+                // 1. DECISIÓN: ¿Usar Texto Nativo/OCR o FORZAR IMAGEN?
+                // Si OCR está apagado, asumimos que el usuario quiere que la IA VEA la página (Vision)
+                
                 const textContent = await page.getTextContent();
-                const nativeText = textContent.items.map(item => item.str).join(' '); // Usamos ' ' para preservar separaciones
+                const nativeText = textContent.items.map(item => item.str).join(' '); 
                 const cleanNative = nativeText.replace(/\s+/g, ' ').trim();
-                const isGarbage = cleanNative.length < 50 || (cleanNative.match(/[^a-zA-Z0-9\sÁÉÍÓÚáéíóúñÑ.,-]/g) || []).length > 20;
+                const hasNativeText = cleanNative.length > 50; // ¿Tiene texto seleccionable?
 
-                if (!isGarbage && cleanNative.length > 20) {
-                    text = cleanNative;
-                    strategy = "Nativo";
-                } else if (config.ocrEnabled) {
-                    strategy = "OCR Local";
-                    const viewport = page.getViewport({ scale: 2.0 });
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height * 0.35; // Top 35%
-                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-                    const processedCanvas = preprocessImageForOCR(canvas, canvas.width, canvas.height);
-                    const { data } = await Tesseract.recognize(processedCanvas, 'spa', { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:\n ', });
-                    text = data.text;
+                // LÓGICA MAESTRA
+                if (config.ocrEnabled) {
+                    // MODO CLÁSICO: Intentar sacar texto primero
+                    if (hasNativeText) {
+                        text = cleanNative;
+                        strategy = "Texto Nativo";
+                    } else {
+                        // Si no hay texto nativo y OCR está ON, usamos Tesseract
+                        strategy = "OCR Local";
+                        const viewport = page.getViewport({ scale: 2.0 });
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        canvas.width = viewport.width; canvas.height = viewport.height * 0.4; // Solo cabecera
+                        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                        const processedCanvas = preprocessImageForOCR(canvas, canvas.width, canvas.height);
+                        const { data } = await Tesseract.recognize(processedCanvas, 'spa', { tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:\n ', });
+                        text = data.text;
+                    }
+                } else {
+                    // MODO SOLO IA (VISION): Ignoramos Tesseract.
+                    // Si hay texto nativo muy bueno, lo usamos para apoyar, pero generamos la imagen para Gemini
+                    strategy = "Gemini Vision (Foto)";
+                    base64Img = await renderPageToImage(page); // Renderizamos TODA la página para que vea si es un Excel/Correo
                 }
 
-                // 2. Heurística Avanzada (Anti-Año)
-                const upperText = text.toUpperCase();
-                const keywords = config.keywords.split(',').map(k => k.trim().toUpperCase());
-                const prefixes = config.numberPrefix.split(',').map(p => p.trim().toUpperCase()); // ["NO.", "N°", ...]
+                // 2. PRIMERA PASADA: Heurística simple (Solo si tenemos texto)
+                // Si estamos en modo VISION puro, saltamos directo a la IA
+                if (strategy !== "Gemini Vision (Foto)" && text) {
+                    const upperText = text.toUpperCase();
+                    const keywords = config.keywords.split(',').map(k => k.trim().toUpperCase());
+                    const prefixes = config.numberPrefix.split(',').map(p => p.trim().toUpperCase());
 
-                // Detectar palabra clave (Comprobante, Nota, etc)
-                if (keywords.some(k => upperText.includes(k))) score += 50;
+                    if (keywords.some(k => upperText.includes(k))) score += 50;
+                    
+                    const regexStr = `(?:${prefixes.join('|').replace(/\./g, '\\.')})[\\s\\n.:]*([0-9]{3,})`;
+                    const regex = new RegExp(regexStr, 'i');
+                    const matchConPrefijo = upperText.match(regex);
+                    const matchAislado = upperText.match(/(\d{3,})/g);
 
-                // REGEX MEJORADA: Permite saltos de línea entre "No." y el número "869"
-                // Explicación: (Prefijo) + (espacios o saltos) + (Digitos)
-                const regexStr = `(?:${prefixes.join('|').replace(/\./g, '\\.')})[\\s\\n.:]*([0-9]{3,})`;
-                const regex = new RegExp(regexStr, 'i');
-                
-                const matchConPrefijo = upperText.match(regex);
-                const matchAislado = upperText.match(/(\d{3,})/g); // Buscar todos los números aislados
-
-                if (matchConPrefijo) {
-                    // Tenemos "No. 869" -> Prioridad absoluta
-                    const cand = matchConPrefijo[1];
-                    // Aún así, si dice "No. 2025" podría ser un error de lectura de fecha, pero es raro.
-                    // Asumimos que si tiene prefijo explícito, es válido.
-                    detectedNumber = cand;
-                    score += 40; 
-                } else if (score >= 50 && matchAislado) {
-                    // Vemos "COMPROBANTE" pero no vemos "No. XXX" claro.
-                    // Buscamos números aislados que NO sean años.
-                    for (let num of matchAislado) {
-                        if (!isLikelyYear(num)) {
-                            detectedNumber = num;
-                            score += 15;
-                            break; // Encontramos el primer número que no es un año (ej: 852)
+                    if (matchConPrefijo) {
+                        const candidato = matchConPrefijo[1];
+                        if (!isLikelyYear(candidato)) {
+                            detectedNumber = candidato;
+                            score += 40; 
+                        }
+                    } else if (score >= 50 && matchAislado) {
+                        for (let num of matchAislado) {
+                            if (!isLikelyYear(num)) {
+                                detectedNumber = num;
+                                score += 15;
+                                break; 
+                            }
                         }
                     }
                 }
 
-                // Validar final
-                if (detectedNumber && isLikelyYear(detectedNumber) && !matchConPrefijo) {
-                    // Si el número detectado parece un año y NO tenía prefijo "No.", lo descartamos
-                    detectedNumber = null;
-                    score -= 20;
-                }
+                // 3. CONSULTA A LA IA (El Cerebro)
+                // Llamamos a la IA si:
+                // a) Estamos en modo VISION (ocr apagado)
+                // b) Estamos en modo normal pero hay duda (score intermedio)
+                // c) Configuración dice que siempre use AI (aiEnabled es true por defecto)
+                
+                if (config.aiEnabled) {
+                    // Si no tenemos imagen aun y la necesitamos (porque el texto falló o modo vision)
+                    if (strategy === "Gemini Vision (Foto)" && !base64Img) {
+                        base64Img = await renderPageToImage(page);
+                    }
+                    // Si el score es bajo en modo texto, generamos imagen para desempatar
+                    if (score < 90 && !base64Img && strategy !== "Gemini Vision (Foto)") {
+                        // Renderizar solo cabecera para ahorrar tokens/tiempo si es desempate
+                        // Pero usuario quiere "inteligencia de soportes", mejor ver página completa si es confuso
+                        if (score < 40) base64Img = await renderPageToImage(page); 
+                    }
 
-                // 3. IA (Desempate o Confirmación)
-                if (config.aiEnabled && score > 20 && score < 90) { 
-                    strategy = config.apiKey ? "IA Gemini (Direct)" : "IA Gemini (Cloud)";
-                    const aiResult = await askGemini(text); 
-                    if (aiResult && aiResult.number) {
-                        // Doble chequeo anti-año en resultado IA
-                        if (!isLikelyYear(aiResult.number)) {
-                            if (aiResult.isStart) {
-                                detectedNumber = aiResult.number;
-                                score = 95;
-                            }
+                    const aiResult = await askGemini(text, base64Img); // Pasamos imagen si existe
+                    
+                    if (aiResult) {
+                        addLog(`Pág ${pageNum} IA dice: ${aiResult.reason || 'Sin razón'}`, "info"); // Feedback visual
+                        if (aiResult.isStart && aiResult.number && !isLikelyYear(aiResult.number)) {
+                            detectedNumber = aiResult.number;
+                            score = 95;
+                            isStart = true;
+                            strategy = base64Img ? "Gemini Vision" : "Gemini Texto";
                         } else {
-                            // La IA devolvió un año, ignoramos
+                            // IA confirmó que es Soporte
+                            isStart = false;
                             score = 10;
                         }
                     }
@@ -282,7 +337,7 @@
 
                 return {
                     pageNum, strategy,
-                    textSnippet: text.substring(0, 100).replace(/\n/g, ' ') + "...",
+                    textSnippet: text ? text.substring(0, 50) + "..." : "Imagen Analizada",
                     isStart: score >= 60,
                     number: detectedNumber,
                     confidence: score
@@ -294,16 +349,17 @@
                 setProcessing(true);
                 setSplitFiles([]);
                 setLogs([]);
-                addLog("Iniciando motor de análisis (Filtro Año Activado)...", "info");
+                await requestWakeLock(); // EVITAR QUE SE DUERMA EL NAVEGADOR
+
+                addLog("Iniciando análisis inteligente...", "info");
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
-                    const bufferCopy = arrayBuffer.slice(0);
                     const loadingTask = pdfjsLib.getDocument(arrayBuffer);
                     const pdfTextDoc = await loadingTask.promise;
                     const numPages = pdfTextDoc.numPages;
                     const { PDFDocument } = PDFLib;
-                    const pdfDoc = await PDFDocument.load(bufferCopy);
+                    const pdfDoc = await PDFDocument.load(arrayBuffer);
 
                     addLog(`Documento cargado: ${numPages} páginas.`, "success");
 
@@ -313,28 +369,27 @@
                     for (let i = 1; i <= numPages; i++) {
                         const percent = Math.round(((i - 1) / numPages) * 100);
                         setProgress(percent);
+                        
+                        // Procesamiento
                         const analysis = await analyzePage(await pdfTextDoc.getPage(i), i, numPages);
                         
                         if (analysis.isStart && analysis.number) {
                             const noteId = analysis.number;
                             
-                            // LÓGICA DE CONTINUIDAD MEJORADA
-                            // Si detectamos el MISMO número que ya traíamos, es simplemente la siguiente página de la misma nota
+                            // Lógica de Continuidad
                             if (currentGroup && currentGroup.id === noteId) {
                                 currentGroup.pages.push(i - 1);
-                                addLog(`Pág ${i}: Continuación confirmada Nota #${noteId}`, "info");
+                                addLog(`Pág ${i}: Continuación Nota #${noteId}`, "info");
                             } else {
-                                // Es una nota NUEVA
                                 addLog(`Pág ${i} [${analysis.strategy}]: INICIO Nota #${noteId}`, "success");
                                 if (currentGroup) groups.push(currentGroup);
                                 currentGroup = { id: noteId, pages: [i - 1], status: "ok" };
                             }
                         } else {
-                            // NO es inicio (es soporte o continuación sin cabecera)
                             if (currentGroup) {
                                 currentGroup.pages.push(i - 1);
                             } else {
-                                addLog(`Pág ${i}: Sin cabecera. A 'Indeterminado'`, "warning");
+                                addLog(`Pág ${i}: Soporte/Indeterminado`, "warning");
                                 currentGroup = { id: "Indeterminado", pages: [i - 1], status: "warning" };
                             }
                         }
@@ -355,13 +410,14 @@
                     }
 
                     setSplitFiles(finalFiles);
-                    addLog("¡Todo listo para descargar!", "success");
+                    addLog("¡Proceso completado!", "success");
 
                 } catch (error) {
                     console.error(error);
                     addLog(`ERROR: ${error.message}`, "error");
                 } finally {
                     setProcessing(false);
+                    releaseWakeLock();
                 }
             };
 
@@ -369,7 +425,7 @@
                 const zip = new JSZip();
                 splitFiles.forEach(f => zip.file(f.name, f.blob));
                 const blob = await zip.generateAsync({type:"blob"});
-                saveAs(blob, "Contabilidad_Separada_Pro.zip");
+                saveAs(blob, "Contabilidad_Separada.zip");
             };
 
             return (
@@ -380,12 +436,17 @@
                                 <span className="p-2 bg-blue-600 rounded-lg text-white"><Icons.Layers /></span>
                                 Divisor Contable <span className="text-blue-600">Enterprise</span>
                             </h1>
-                            <p className="text-slate-500 mt-1 font-medium">Versión Netlify Secure Cloud (Fix Año 2025)</p>
+                            <p className="text-slate-500 mt-1 font-medium text-sm">Vision Edition (Soportes Inteligentes)</p>
                         </div>
                         <div className="flex items-center gap-3 bg-white p-2 rounded-xl border shadow-sm">
-                            <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${config.ocrEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                <Icons.Scan /> OCR {config.ocrEnabled ? 'ON' : 'OFF'}
-                            </div>
+                            {/* BOTÓN OCR: Ahora controla si usamos Tesseract o Visión Pura */}
+                            <button 
+                                onClick={() => setConfig({...config, ocrEnabled: !config.ocrEnabled})}
+                                className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 transition-all ${config.ocrEnabled ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200 ring-2 ring-blue-400'}`}
+                            >
+                                {config.ocrEnabled ? <><Icons.Scan /> Modo Rápido (OCR)</> : <><Icons.Eye /> Modo Inteligente (Gemini Vision)</>}
+                            </button>
+                            
                             <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${config.aiEnabled ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
                                 <Icons.Brain /> IA {config.aiEnabled ? 'ON' : 'OFF'}
                             </div>
@@ -411,30 +472,34 @@
                             </div>
 
                             <div className="glass-panel p-6 rounded-2xl shadow-sm">
-                                <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Configuración del Motor</h2>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Opciones</h2>
+                                    <button onClick={() => setShowSettings(!showSettings)} className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+                                        <Icons.Settings /> {showSettings ? 'Ocultar' : 'Avanzado'}
+                                    </button>
+                                </div>
+                                
                                 <div className="space-y-4">
-                                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-bold text-slate-700">Modo IA (Gemini)</span>
-                                            <span className="text-[10px] text-slate-500">{config.apiKey ? 'Usando Key Personal' : 'Usando Netlify Cloud Secure'}</span>
-                                        </div>
-                                        <button onClick={() => setConfig({...config, aiEnabled: !config.aiEnabled})} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${config.aiEnabled ? 'bg-purple-600' : 'bg-gray-200'}`}>
-                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${config.aiEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                                        </button>
+                                    {/* Explicación dinámica del modo */}
+                                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600">
+                                        {config.ocrEnabled 
+                                            ? "⚡ Modo Rápido: Intenta leer texto primero. Usa IA solo si duda. Bueno para documentos digitales limpios."
+                                            : "🧠 Modo Inteligente: Gemini 'mira' cada página. Detecta Excels, Correos y Facturas difíciles. Más lento pero más preciso."
+                                        }
                                     </div>
 
-                                    {/* Input de API Key Opcional */}
-                                    <div className="fade-in">
-                                        <label className="text-xs font-semibold text-slate-500 block mb-1">API Key Personal (Opcional)</label>
-                                        <input 
-                                            type="password" 
-                                            value={config.apiKey}
-                                            onChange={(e) => setConfig({...config, apiKey: e.target.value})}
-                                            placeholder={usingNetlifyProxy ? "Oculto (Gestionado por Netlify)" : "Pegar sk-..."}
-                                            className="w-full text-xs p-2 rounded border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        />
-                                        <p className="text-[10px] text-slate-400 mt-1">Si dejas esto vacío, usaremos la configuración segura del servidor.</p>
-                                    </div>
+                                    {showSettings && (
+                                        <div className="fade-in pt-4 border-t border-slate-100">
+                                            <label className="text-xs font-semibold text-slate-500 block mb-1">Clave API Personal (Opcional)</label>
+                                            <input 
+                                                type="password" 
+                                                value={config.apiKey}
+                                                onChange={(e) => setConfig({...config, apiKey: e.target.value})}
+                                                placeholder="Solo si quieres usar tu propia key..."
+                                                className="w-full text-xs p-2 rounded border border-slate-200 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -447,7 +512,7 @@
                             <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-xl border border-slate-700 flex flex-col h-64 md:h-80">
                                 <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
                                     <div className="flex gap-2"><div className="w-3 h-3 rounded-full bg-red-500"></div><div className="w-3 h-3 rounded-full bg-yellow-500"></div><div className="w-3 h-3 rounded-full bg-green-500"></div></div>
-                                    <span className="text-xs font-mono text-slate-400 uppercase">System Logs</span>
+                                    <span className="text-xs font-mono text-slate-400 uppercase">Logs de Procesamiento</span>
                                 </div>
                                 <div className="p-4 font-mono text-xs flex-1 overflow-y-auto space-y-2 terminal-bg">
                                     {logs.map((log) => (
