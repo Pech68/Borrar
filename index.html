@@ -3,73 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Divisor de Notas Contables</title>
+    <title>Divisor Contable Pro (con OCR)</title>
     
-    <!-- Estilos: Tailwind CSS -->
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- React y ReactDOM -->
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel para interpretar JSX en el navegador -->
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Librerías de PDF y Utilidades -->
+    <!-- Librerías Principales -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <!-- Tesseract.js para OCR (Lectura de imágenes) -->
+    <script src='https://unpkg.com/tesseract.js@4.1.1/dist/tesseract.min.js'></script>
 
-    <!-- Fuente Inter para un look moderno -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .animate-fade-in { animation: fadeIn 0.5s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        /* Barra de progreso personalizada */
+        progress::-webkit-progress-bar { background-color: #e2e8f0; border-radius: 999px; }
+        progress::-webkit-progress-value { background-color: #3b82f6; border-radius: 999px; transition: width 0.3s ease; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
+<body class="bg-gray-50 text-slate-800">
 
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- Iconos SVG (Reemplazando lucide-react para evitar dependencias complejas) ---
-        const IconUpload = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>;
-        const IconFileText = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>;
-        const IconScissors = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>;
-        const IconDownload = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
-        const IconCheckCircle = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
-        const IconEye = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
-        const IconLoader = () => <svg className="animate-spin" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;
-
-        // --- Configuración Inicial ---
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
         
-        // Configurar el worker de PDF.js apuntando al CDN correcto
+        // Configurar PDF.js
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        // --- Componente Principal ---
+        // --- Iconos ---
+        const IconScan = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>;
+        const IconBolt = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>;
+
         function App() {
             const [file, setFile] = useState(null);
             const [processing, setProcessing] = useState(false);
+            const [progress, setProgress] = useState(0);
+            const [currentStatus, setCurrentStatus] = useState("");
             const [splitFiles, setSplitFiles] = useState([]);
             const [logs, setLogs] = useState([]);
-            const [splitKeyword, setSplitKeyword] = useState("COMPROBANTE CONTABLE");
-            const [numberPrefix, setNumberPrefix] = useState("No.");
+            
+            // Configuración
+            const [useOCR, setUseOCR] = useState(true); // Por defecto OCR activado para escaneos
+            const [keyword, setKeyword] = useState("COMPROBANTE");
+            const [prefix, setPrefix] = useState("No"); // Flexible: buscará "No", "No.", "N°"
 
-            const addLog = (msg) => setLogs(prev => [...prev, msg]);
+            const addLog = (msg) => {
+                const time = new Date().toLocaleTimeString();
+                setLogs(prev => [`[${time}] ${msg}`, ...prev]);
+                setCurrentStatus(msg);
+            };
 
-            const handleFileChange = (e) => {
-                const selectedFile = e.target.files[0];
-                if (selectedFile && selectedFile.type === 'application/pdf') {
-                    setFile(selectedFile);
+            const handleFile = (e) => {
+                if(e.target.files[0]) {
+                    setFile(e.target.files[0]);
                     setSplitFiles([]);
                     setLogs([]);
-                    addLog(`Archivo cargado: ${selectedFile.name}`);
-                } else {
-                    alert("Por favor selecciona un archivo PDF válido.");
+                    setProgress(0);
+                }
+            };
+
+            // --- Función Mágica de OCR ---
+            const extractTextWithOCR = async (pdfPage, pageNum) => {
+                try {
+                    // 1. Renderizar página a Canvas
+                    const viewport = pdfPage.getViewport({ scale: 1.5 }); // Escala alta para leer mejor
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    
+                    // OPTIMIZACIÓN: Solo leer el 35% superior de la página (donde está el título)
+                    // Esto reduce el tiempo de proceso de 5 seg a 1.5 seg por página.
+                    const cropHeight = viewport.height * 0.35; 
+                    
+                    canvas.height = cropHeight;
+                    canvas.width = viewport.width;
+
+                    await pdfPage.render({
+                        canvasContext: context,
+                        viewport: viewport,
+                        // El transform recorta la visualización
+                    }).promise;
+
+                    // 2. Usar Tesseract en el Canvas
+                    const { data: { text } } = await Tesseract.recognize(canvas, 'spa', {
+                        // logger: m => console.log(m) // Descomentar para ver progreso interno de Tesseract
+                    });
+                    
+                    return text;
+                } catch (e) {
+                    console.error("Error OCR en pag " + pageNum, e);
+                    return "";
                 }
             };
 
@@ -78,92 +115,126 @@
                 setProcessing(true);
                 setLogs([]);
                 setSplitFiles([]);
-                addLog("Iniciando análisis del PDF...");
+                setProgress(0);
 
                 try {
                     const arrayBuffer = await file.arrayBuffer();
+                    // Clonar buffer para pdf-lib (crítico)
+                    const bufferCopy = arrayBuffer.slice(0);
                     
-                    // IMPORTANTE: Clonamos el buffer. 
-                    // pdfjsLib.getDocument puede "transferir" el buffer al worker, dejándolo vacío (detached) en el hilo principal.
-                    // Necesitamos una copia intacta para que pdf-lib la use después.
-                    const arrayBufferForPdfLib = arrayBuffer.slice(0);
-
-                    // 1. Leer texto con PDF.js (usa el buffer original)
                     const loadingTask = pdfjsLib.getDocument(arrayBuffer);
                     const pdfTextDoc = await loadingTask.promise;
                     const numPages = pdfTextDoc.numPages;
-
-                    // 2. Cargar documento para manipulación con pdf-lib (usa la copia)
+                    
                     const { PDFDocument } = PDFLib;
-                    const pdfDoc = await PDFDocument.load(arrayBufferForPdfLib);
+                    const pdfDoc = await PDFDocument.load(bufferCopy);
 
-                    addLog(`El documento tiene ${numPages} páginas. Analizando contenido...`);
+                    addLog(`Iniciando análisis de ${numPages} páginas en modo ${useOCR ? 'OCR (Escaneado)' : 'Texto Nativo'}...`);
 
                     const groups = []; 
                     let currentGroup = null;
 
-                    // Regex flexible para encontrar el número
-                    const escapedPrefix = numberPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const numberRegex = new RegExp(`${escapedPrefix}\\s*(\\d+)`, 'i');
+                    // Regex más agresiva para encontrar números dispersos
+                    // Busca la palabra clave, luego cualquier cosa, luego el prefijo, luego digitos
+                    // Ej: coincide con "COMPROBANTE ... basura ... No. ... 850"
+                    // const headerRegex = new RegExp(`${keyword}[\\s\\S]{0,200}?${prefix}[^0-9]{0,10}(\\d+)`, 'i');
+                    
+                    // Regex simple para buscar el número independientemente de la palabra clave primero
+                    // Buscamos "No 850" o "No. 850" o "850" si está cerca de la palabra clave
+                    const numberRegex = /(\d+)/;
 
                     for (let i = 1; i <= numPages; i++) {
+                        // Actualizar progreso
+                        setProgress(Math.round(((i - 1) / numPages) * 100));
+                        
                         const page = await pdfTextDoc.getPage(i);
-                        const textContent = await page.getTextContent();
-                        const pageText = textContent.items.map(item => item.str).join(' ');
+                        let pageText = "";
 
-                        const hasKeyword = pageText.toUpperCase().includes(splitKeyword.toUpperCase());
-                        const matchNumber = pageText.match(numberRegex);
-                        const pageIndex = i - 1;
-
-                        if (hasKeyword && matchNumber) {
-                            const noteNumber = matchNumber[1];
-                            addLog(`Página ${i}: Inicio de nueva nota -> ${noteNumber}`);
-                            currentGroup = { noteNumber: noteNumber, pageIndices: [pageIndex] };
-                            groups.push(currentGroup);
+                        if (useOCR) {
+                            addLog(`Escaneando página ${i}/${numPages} (OCR)...`);
+                            pageText = await extractTextWithOCR(page, i);
                         } else {
-                            if (currentGroup) {
-                                currentGroup.pageIndices.push(pageIndex);
+                            // Modo rápido (texto seleccionable)
+                            const textContent = await page.getTextContent();
+                            pageText = textContent.items.map(item => item.str).join(' ');
+                        }
+
+                        // Normalización: Quitar saltos de línea y espacios extraños
+                        const cleanText = pageText.replace(/\n/g, ' ').replace(/\s+/g, ' ').toUpperCase();
+                        const keywordFound = cleanText.includes(keyword.toUpperCase());
+                        
+                        // Lógica de detección mejorada
+                        if (keywordFound) {
+                            // Intentar encontrar el número cerca del prefijo
+                            // Buscamos algo como "No 850" o "No. 850"
+                            const prefixIndex = cleanText.indexOf(prefix.toUpperCase());
+                            let noteNumber = "Desconocido_" + i;
+
+                            if (prefixIndex !== -1) {
+                                // Cortar el texto después del prefijo y buscar el primer número
+                                const textAfterPrefix = cleanText.substring(prefixIndex);
+                                const match = textAfterPrefix.match(/(\d+)/);
+                                if (match) noteNumber = match[1];
                             } else {
-                                addLog(`Página ${i}: Sin cabecera, asignando a 'Indeterminado'`);
-                                if (groups.length === 0 || groups[groups.length-1].noteNumber !== 'Indeterminado') {
-                                    currentGroup = { noteNumber: 'Indeterminado', pageIndices: [pageIndex] };
+                                // Si no hay prefijo "No", buscar el primer numero después de la keyword
+                                const textAfterKeyword = cleanText.substring(cleanText.indexOf(keyword.toUpperCase()));
+                                const match = textAfterKeyword.match(/(\d+)/);
+                                if (match) noteNumber = match[1];
+                            }
+
+                            addLog(`--> Pág ${i}: NUEVA NOTA detectada (#${noteNumber})`);
+                            
+                            currentGroup = {
+                                id: noteNumber,
+                                pageIndices: [i - 1]
+                            };
+                            groups.push(currentGroup);
+
+                        } else {
+                            // Es una página de anexo/soporte
+                            if (currentGroup) {
+                                // addLog(`Pág ${i}: Soporte de nota ${currentGroup.id}`);
+                                currentGroup.pageIndices.push(i - 1);
+                            } else {
+                                // Caso especial: primera página sin título
+                                addLog(`Pág ${i}: Sin cabecera (asignando a Inicio)`);
+                                if (groups.length === 0 || groups[groups.length-1].id !== 'Indefinido') {
+                                    currentGroup = { id: 'Indefinido', pageIndices: [i - 1] };
                                     groups.push(currentGroup);
                                 } else {
-                                    currentGroup.pageIndices.push(pageIndex);
+                                    currentGroup.pageIndices.push(i - 1);
                                 }
                             }
                         }
                     }
 
-                    addLog(`Se encontraron ${groups.length} documentos distintos.`);
-                    addLog("Generando archivos individuales...");
+                    setProgress(100);
+                    addLog(`Análisis completo. Generando ${groups.length} archivos PDF...`);
 
+                    // Generar PDFs
                     const generatedFiles = [];
-
                     for (const group of groups) {
                         const newPdf = await PDFDocument.create();
                         const copiedPages = await newPdf.copyPages(pdfDoc, group.pageIndices);
                         copiedPages.forEach(page => newPdf.addPage(page));
-
+                        
                         const pdfBytes = await newPdf.save();
                         const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                        const fileName = `${group.noteNumber}.pdf`;
-
+                        
                         generatedFiles.push({
-                            id: group.noteNumber,
-                            name: fileName,
+                            name: `${group.id}.pdf`,
                             blob: blob,
                             pages: group.pageIndices.length
                         });
                     }
 
                     setSplitFiles(generatedFiles);
-                    addLog("¡Proceso terminado con éxito!");
+                    addLog("¡Listo! Archivos preparados para descarga.");
 
                 } catch (error) {
                     console.error(error);
-                    addLog(`Error crítico: ${error.message}`);
-                    alert("Error al procesar. Revisa la consola o intenta de nuevo.");
+                    addLog(`ERROR: ${error.message}`);
+                    alert("Ocurrió un error. Revisa que el PDF sea válido.");
                 } finally {
                     setProcessing(false);
                 }
@@ -171,138 +242,124 @@
 
             const downloadZip = async () => {
                 const zip = new JSZip();
-                splitFiles.forEach(file => {
-                    zip.file(file.name, file.blob);
-                });
+                splitFiles.forEach(file => zip.file(file.name, file.blob));
                 const content = await zip.generateAsync({ type: "blob" });
-                saveAs(content, "Notas_Contables_Separadas.zip");
+                saveAs(content, "Notas_Separadas_OCR.zip");
             };
 
             return (
-                <div className="min-h-screen bg-slate-50 p-6 md:p-12 font-sans">
-                    <div className="max-w-4xl mx-auto space-y-8">
+                <div className="min-h-screen p-4 md:p-10 max-w-5xl mx-auto">
+                    
+                    {/* Header */}
+                    <div className="text-center mb-10">
+                        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                            Divisor de Notas Contables <span className="text-blue-600">Pro</span>
+                        </h1>
+                        <p className="text-slate-500 mt-2">
+                            Separa archivos escaneados o digitales automáticamente.
+                        </p>
+                    </div>
+
+                    <div className="grid md:grid-cols-3 gap-6">
                         
-                        {/* Header */}
-                        <div className="text-center space-y-2">
-                            <h1 className="text-3xl md:text-4xl font-bold text-slate-900 flex items-center justify-center gap-3">
-                                <span className="text-blue-600"><IconScissors /></span>
-                                Divisor de Notas Contables
-                            </h1>
-                            <p className="text-slate-500 max-w-2xl mx-auto">
-                                Sube tu PDF masivo. El sistema detectará automáticamente cada nota contable y sus soportes para separarlos en archivos individuales listos para descargar.
-                            </p>
-                        </div>
-
-                        {/* Panel de Control */}
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                            <div className="flex flex-col md:flex-row gap-6">
-                                {/* Zona de Carga */}
-                                <div className="flex-1 space-y-4">
-                                    <label className="block text-sm font-medium text-slate-700">1. Seleccionar PDF</label>
-                                    <div className="relative border-2 border-dashed border-slate-300 rounded-lg p-8 hover:bg-slate-50 transition-colors text-center cursor-pointer group h-full flex flex-col items-center justify-center">
-                                        <input type="file" accept=".pdf" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                        <div className="bg-blue-100 p-3 rounded-full mb-3 group-hover:scale-110 transition-transform">
-                                            <span className="text-blue-600"><IconUpload /></span>
-                                        </div>
-                                        <div className="text-sm text-slate-600">
-                                            {file ? <span className="font-semibold text-blue-600">{file.name}</span> : <span>Arrastra o haz clic aquí</span>}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Configuración */}
-                                <div className="md:w-1/3 space-y-4">
-                                    <label className="block text-sm font-medium text-slate-700">2. Configuración</label>
-                                    <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                                        <div>
-                                            <label className="text-xs text-slate-500 uppercase font-bold block mb-1">Palabra Clave</label>
-                                            <input 
-                                                type="text" 
-                                                value={splitKeyword}
-                                                onChange={(e) => setSplitKeyword(e.target.value)}
-                                                className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-slate-500 uppercase font-bold block mb-1">Prefijo Número</label>
-                                            <input 
-                                                type="text" 
-                                                value={numberPrefix}
-                                                onChange={(e) => setNumberPrefix(e.target.value)}
-                                                className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                            />
-                                        </div>
-                                    </div>
+                        {/* Columna Izquierda: Configuración */}
+                        <div className="md:col-span-1 space-y-4">
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                                <label className="block text-sm font-semibold text-slate-700 mb-2">1. Cargar Archivo</label>
+                                <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:bg-slate-50 transition cursor-pointer relative">
+                                    <input type="file" accept=".pdf" onChange={handleFile} className="absolute inset-0 opacity-0 cursor-pointer" />
+                                    <div className="text-blue-500 mx-auto mb-2"><IconScan /></div>
+                                    <span className="text-xs text-slate-500">{file ? file.name : "Click para subir PDF"}</span>
                                 </div>
                             </div>
 
-                            <div className="mt-6 flex justify-end">
-                                <button 
-                                    onClick={processPDF} 
-                                    disabled={!file || processing}
-                                    className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-white transition-all shadow-md
-                                        ${!file || processing ? 'bg-slate-300 cursor-not-allowed shadow-none' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg active:scale-95'}
-                                    `}
-                                >
-                                    {processing ? <><IconLoader /> Procesando...</> : <><IconScissors /> Separar PDF</>}
-                                </button>
-                            </div>
-                        </div>
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                                <label className="block text-sm font-semibold text-slate-700 mb-3">2. Modo de Lectura</label>
+                                
+                                <div className="space-y-3">
+                                    <button 
+                                        onClick={() => setUseOCR(false)}
+                                        className={`w-full flex items-center p-3 rounded-lg border text-sm transition ${!useOCR ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 hover:bg-slate-50'}`}
+                                    >
+                                        <div className="mr-3"><IconBolt /></div>
+                                        <div className="text-left">
+                                            <div className="font-semibold">Modo Rápido</div>
+                                            <div className="text-[10px] opacity-70">Si el PDF permite seleccionar texto.</div>
+                                        </div>
+                                    </button>
 
-                        {/* Resultados */}
-                        {splitFiles.length > 0 && (
-                            <div className="space-y-6 animate-fade-in">
-                                <div className="flex items-center justify-between flex-wrap gap-4">
-                                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                        <span className="text-green-500"><IconCheckCircle /></span>
-                                        Resultados ({splitFiles.length} documentos)
-                                    </h2>
-                                    <button onClick={downloadZip} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium shadow-sm transition-colors">
-                                        <IconDownload /> Descargar Todo (.ZIP)
+                                    <button 
+                                        onClick={() => setUseOCR(true)}
+                                        className={`w-full flex items-center p-3 rounded-lg border text-sm transition ${useOCR ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 hover:bg-slate-50'}`}
+                                    >
+                                        <div className="mr-3"><IconScan /></div>
+                                        <div className="text-left">
+                                            <div className="font-semibold">Modo Escaneado (OCR)</div>
+                                            <div className="text-[10px] opacity-70">Para imágenes/scans. Más lento pero efectivo.</div>
+                                        </div>
                                     </button>
                                 </div>
+                            </div>
 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {splitFiles.map((file) => (
-                                        <div key={file.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
-                                            <div className="flex items-center gap-3 mb-4">
-                                                <div className="bg-red-50 p-2 rounded-lg text-red-500"><IconFileText /></div>
-                                                <div>
-                                                    <h3 className="font-bold text-slate-800">{file.name}</h3>
-                                                    <p className="text-xs text-slate-500">{file.pages} {file.pages === 1 ? 'página' : 'páginas'}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => window.open(URL.createObjectURL(file.blob), '_blank')} className="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition-colors">
-                                                    <IconEye /> Ver
-                                                </button>
-                                                <button onClick={() => saveAs(file.blob, file.name)} className="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded transition-colors">
-                                                    <IconDownload /> Bajar
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Consola de Logs */}
-                        <div className="bg-slate-900 rounded-lg p-4 font-mono text-xs md:text-sm h-48 overflow-y-auto shadow-inner border border-slate-700">
-                            <div className="text-slate-400 mb-2 sticky top-0 bg-slate-900 pb-2 border-b border-slate-700 font-bold uppercase tracking-wider flex justify-between">
-                                <span>Consola de Sistema</span>
-                                {logs.length > 0 && <span className="text-[10px] cursor-pointer hover:text-white" onClick={() => setLogs([])}>Limpiar</span>}
-                            </div>
-                            <div className="space-y-1">
-                                {logs.length === 0 && <span className="text-slate-600 italic">... Esperando archivo ...</span>}
-                                {logs.map((log, index) => (
-                                    <div key={index} className="text-green-400 border-l-2 border-slate-700 pl-2">
-                                        <span className="opacity-50 mr-2">[{new Date().toLocaleTimeString()}]</span>
-                                        {log}
-                                    </div>
-                                ))}
-                            </div>
+                            <button 
+                                onClick={processPDF}
+                                disabled={!file || processing}
+                                className={`w-full py-3 px-4 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95
+                                    ${!file || processing ? 'bg-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-xl'}
+                                `}
+                            >
+                                {processing ? 'Procesando...' : 'Comenzar Separación'}
+                            </button>
                         </div>
 
+                        {/* Columna Derecha: Resultados y Log */}
+                        <div className="md:col-span-2 space-y-6">
+                            
+                            {/* Panel de Progreso */}
+                            <div className="bg-slate-900 text-green-400 p-4 rounded-xl font-mono text-xs h-64 overflow-y-auto shadow-inner flex flex-col-reverse">
+                                {logs.length === 0 && <div className="text-slate-600 text-center mt-10">Esperando inicio del proceso...</div>}
+                                {logs.map((log, i) => <div key={i} className="border-l-2 border-slate-700 pl-2 mb-1">{log}</div>)}
+                            </div>
+
+                            {processing && (
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-xs font-semibold text-slate-600">
+                                        <span>Progreso</span>
+                                        <span>{progress}%</span>
+                                    </div>
+                                    <progress value={progress} max="100" className="w-full h-2"></progress>
+                                    <p className="text-xs text-center text-slate-500 animate-pulse">{currentStatus}</p>
+                                </div>
+                            )}
+
+                            {/* Resultados */}
+                            {splitFiles.length > 0 && (
+                                <div className="bg-white rounded-xl shadow border border-slate-200 p-6 fade-in">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-bold text-lg text-slate-800">Archivos Generados ({splitFiles.length})</h3>
+                                        <button onClick={downloadZip} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 shadow-md flex gap-2">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                            Descargar ZIP
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-60 overflow-y-auto pr-2">
+                                        {splitFiles.map((f, i) => (
+                                            <div key={i} className="flex flex-col bg-slate-50 p-3 rounded border border-slate-100 text-center">
+                                                <span className="font-bold text-slate-700 text-sm truncate">{f.name}</span>
+                                                <span className="text-xs text-slate-500">{f.pages} pág(s)</span>
+                                                <div className="flex gap-1 mt-2 justify-center">
+                                                     <button 
+                                                        onClick={() => window.open(URL.createObjectURL(f.blob))}
+                                                        className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] hover:bg-slate-100"
+                                                    >Ver</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
                     </div>
                 </div>
             );
